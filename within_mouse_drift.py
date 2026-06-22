@@ -149,7 +149,7 @@ def plot_drift(df, k, used, rho, p, ds_name, out_dir):
 
 def plot_combined(per_ds, out_path):
     fig, ax = plt.subplots(figsize=(11, 6))
-    colors = {"1mp": "tab:red", "1lc": "tab:blue", "2lc": "tab:cyan"}
+    colors = {"1mp": "tab:blue", "1lc": "tab:red", "2lc": "tab:orange", "2mp": "tab:cyan", "3mp": "tab:purple"}
     floor_top = max(df["floor95"].max() for df, *_ in per_ds.values())
     ax.axhspan(0, floor_top, color="grey", alpha=0.18,
                label=f"sampling-noise floor (<= {floor_top:.3f})")
@@ -161,7 +161,7 @@ def plot_combined(per_ds, out_path):
         ax.plot(reg["week_num"], reg["drift_js"], "o-", color=c,
                 label=f"{ds} ({tag}); rho={rho:.2f}, p={p:.2g}")
         for _, r in df[df["variant"]].iterrows():
-            mk = "D" if "ldop" in r["week"].lower() else "^"
+            mk = "^" if "saline" in r["week"].lower() else "D"
             ax.plot(r["week_num"], r["drift_js"], mk, color=c, markersize=10,
                     markeredgecolor="k", linestyle="none")
 

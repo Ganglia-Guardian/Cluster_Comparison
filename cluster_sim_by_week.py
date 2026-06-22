@@ -52,10 +52,10 @@ def week_sort_key(week):
     match = re.search(r"\d+", week)
     num = float(match.group()) if match else float("inf")
     low = week.lower()
-    if "ldop" in low:
-        num += 0.1
-    elif "saline" in low:
-        num += 0.2
+    if "saline" in low:
+        num += 0.5
+    elif "ldop" in low:
+        num += 1
     return num
 
 
