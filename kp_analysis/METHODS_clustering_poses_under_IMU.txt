@@ -1,0 +1,534 @@
+================================================================================
+ CLUSTERING POSES UNDER KNOWN IMU CLUSTERS
+ Methods, rationale, and glossary
+ Scope: week-8 sessions wk8lc (subject 2lc) and wk8mp (subject 2mp)
+ Status: 2-session pilot. Designed to scale to a week-by-week analysis later.
+================================================================================
+
+--------------------------------------------------------------------------------
+0. PURPOSE & SCOPE
+--------------------------------------------------------------------------------
+We have two parallel descriptions of the same recording session:
+
+  (1) IMU/func clustering  -- a pre-existing behavioral codebook built from
+      head-mounted inertial (accelerometer/gyro) data. Each ~0.345 s "window"
+      already carries a discrete IMU cluster label (called ClusterIdx, or the
+      "func" label). We treat these as GIVEN / KNOWN ("the prior").
+
+  (2) Pose / internal geometry -- derived here from 3D keypoint tracking.
+
+This document covers ONE direction of analysis: taking the KNOWN IMU clusters as
+a prior and asking how the POSE data is organized underneath them -- i.e.
+"clustering poses under known IMU clusters." (The reverse direction, clustering
+IMU data under pose priors with Affinity Propagation, exists in the codebase but
+is out of scope here; see kp_pose_prior_imu.py.)
+
+Central question: when you already know an animal's IMU-defined behavior, does
+its body geometry (posture) carry coherent, non-random structure? And does that
+structure relate to the IMU codebook's own internal structure?
+
+Terms in ALL-CAPS or "quoted" on first use are defined inline and again in the
+Appendix glossary (Section 11).
+
+--------------------------------------------------------------------------------
+1. DATA SOURCES
+--------------------------------------------------------------------------------
+Per session there are two files:
+
+  kp_analysis/data/<session>/multicam_3d_results.csv
+      EKS ("Ensemble Kalman Smoother") 3D keypoint output, in Lightning-Pose /
+      DeepLabCut multi-camera format. EKS is a smoother that fuses multiple
+      camera views into a single 3D estimate per keypoint, plus a per-axis
+      POSTERIOR VARIANCE (its uncertainty). The file has a 3-row header:
+          row 1 scorer     (all "ensemble-kalman_tracker")
+          row 2 bodyparts  (keypoint name, repeated per coordinate)
+          row 3 coords     (x, y, z, x_posterior_var, y_posterior_var,
+                            z_posterior_var)
+      17 keypoints x 6 columns; 108,000 frames at 30 fps (~60 min).
+      The data is FRAME-UNANCHORED: there is no global / gravitational x-y-z
+      reference, so absolute coordinates are meaningless and differ wildly
+      between sessions (see Section 4).
+
+  data/<imu_subject>/Cluster_detail_results.csv
+      One row per IMU window across ALL weeks of that subject:
+          ClusterIdx   -- the IMU (func) cluster label
+          Timestamp    -- start time on a continuous global IMU clock (seconds)
+          Folder_Name  -- which week / recording the window belongs to
+      The IMU window-by-window similarity matrix lives separately in
+      data/<imu_subject>/session_1_out.mat (see Section 7.3).
+
+  Session -> subject mapping (IMPORTANT, verified by hand):
+      wk8lc  <->  2lc   (week folder "w8")
+      wk8mp  <->  2mp   (week folder "week8")
+
+--------------------------------------------------------------------------------
+2. KEYPOINT SELECTION  (which, and why)
+--------------------------------------------------------------------------------
+The full marker set has 17 keypoints:
+    snout, ear_left, ear_right, head, back_top, back_mid, back_base,
+    tail_mid, tail_end, paw_front_left, ankle_front_left, paw_front_right,
+    ankle_front_right, paw_rear_left, ankle_rear_left, paw_rear_right,
+    ankle_rear_right
+
+We dropped TWO keypoints -- paw_front_left and back_base -- because they are
+100% missing in wk8mp. Any pairwise distance touching a missing keypoint is
+unusable, and we require a COMMON keypoint set so the two sessions share an
+identical feature space (and so future cross-week comparisons are commensurate).
+
+  => 15 "common keypoints" -> C(15,2) = 105 pairwise distances per frame.
+
+Why pairwise distances at all? Because the data is frame-unanchored. The
+PAIRWISE DISTANCE MATRIX between keypoints is invariant to translation and
+rotation of the whole animal -- it captures only INTERNAL GEOMETRY (the shape of
+the skeleton), which is exactly what is comparable across sessions recorded in
+different camera frames. (Distances are also reflection-invariant, i.e. they
+cannot distinguish a left turn from its mirror-image right turn; we accepted this
+for posture work.)
+
+--------------------------------------------------------------------------------
+3. DATA CLEANING
+--------------------------------------------------------------------------------
+3.1 Missing data / interpolation
+    wk8lc keypoints are complete (0% NaN). wk8mp has ~12% scattered missing
+    values (beyond the two fully-absent keypoints). We linearly INTERPOLATE each
+    coordinate over time (per keypoint, per axis); the series ends are held flat.
+    After interpolation, 0 residual NaNs remain.
+    [kp_features.load_keypoints / _interp_gaps]
+
+3.2 Posterior variance
+    EKS provides per-coordinate posterior variance (localization uncertainty).
+    It is available for confidence-weighting or masking of unreliable distances;
+    in the current pipeline we rely on interpolation and do not down-weight,
+    but the variances are loaded and preserved for future use.
+
+3.3 Scale normalization
+    The two sessions live in completely different coordinate frames -- the median
+    pairwise distance is ~91 (wk8lc) vs ~1252 (wk8mp), a ~14x difference from
+    camera setup. To make sessions comparable WITHOUT destroying within-session
+    posture variation, we divide every distance in a session by that session's
+    single MEDIAN pairwise distance (one scalar per session). This removes fixed
+    body-size / camera-depth scale but preserves relative posture changes. (A
+    per-frame normalization would have partly erased real posture variation, so
+    we deliberately used a session-level scalar instead.)
+    [kp_features.normalize_scale]
+
+--------------------------------------------------------------------------------
+4. FEATURE CONSTRUCTION
+--------------------------------------------------------------------------------
+Per frame:
+  POSTURE features  = the 105 scale-normalized pairwise 3D Euclidean distances.
+                      This is the "internal geometry" of that frame.
+  MOTION features   = the time-derivative of those 105 distances, i.e. the
+                      DEFORMATION RATE (how fast the internal geometry is
+                      changing). Computed with a Savitzky-Golay derivative
+                      (window length 7 frames, polynomial order 2), which
+                      smooths and differentiates in one pass to avoid the noise
+                      amplification of a raw frame-to-frame difference. Scaled to
+                      units/second using fps = 30.
+                      NOTE: this is an INTERNAL-frame deformation rate, NOT
+                      locomotor speed -- true speed needs a global frame, which
+                      the unanchored data lacks. The head IMU, by contrast,
+                      measures GLOBAL-frame dynamics, so IMU "motion" and pose
+                      "deformation rate" are different quantities by construction.
+  [kp_features.pairwise_distances / motion_features]
+
+For the IMU-prior->pose analyses the POSTURE features are primary; MOTION is used
+mainly to define "transitional" vs "sustained" frames (Section 8.0).
+
+--------------------------------------------------------------------------------
+5. TEMPORAL RECONCILIATION  (how the two clocks were aligned)
+--------------------------------------------------------------------------------
+The keypoint video and the IMU recording run on different clocks and durations:
+
+      keypoint video : 30 fps, full ~60 min, 108,000 frames
+      IMU week-8      : ~5,964 (2lc) / ~5,977 (2mp) windows of ~0.345 s each,
+                        ~35 min total, ~170 Hz raw IMU (~60 IMU samples/window)
+
+Reconciliation assumptions (confirmed for this rig):
+  * SHARED START TRIGGER: the camera and IMU began together, so IMU window 0
+    corresponds to video frame 0.
+  * The IMU therefore covers only the FIRST ~35 min of the 60-min video
+    (~63,000 of the 108,000 frames overlap; later frames have no IMU label).
+
+Procedure [kp_features.load_func_windows / assign_frames_to_windows /
+           aggregate_to_windows; orchestrated in kp_cluster_compare.build_windows]:
+  1. For the session's week folder, take the IMU windows, sort by Timestamp,
+     and subtract the first Timestamp so window start times are seconds-relative
+     to the shared origin (frame 0).
+  2. Each video frame f is placed at time t = f / 30 s and assigned to the IMU
+     window whose [start, end) interval contains t. Window end = next window's
+     start; the last window gets the median window duration.
+  3. Frames past the IMU end, or falling in one of the ~6 small inter-window
+     gaps, are dropped (label -1).
+  4. Per-frame POSTURE features are averaged within each window (mean); MOTION
+     features are aggregated as mean-of-absolute-value (motion magnitude).
+     Result: ~10.6 frames per window, one feature vector per IMU window, aligned
+     1:1 with that window's IMU ClusterIdx.
+
+Independent sanity check: the number of frames landing inside the IMU span
+(~63,080) matches the 30 fps x 2,102 s prediction (~63,060) to within 0.03%,
+corroborating the shared-start + constant-30-fps model.
+
+--------------------------------------------------------------------------------
+6. CLUSTERING ALGORITHMS USED
+--------------------------------------------------------------------------------
+6.1 Pose clustering (the thing we build)
+    Pipeline: StandardScaler (z-score each of the 105 features)
+              -> PCA retaining 95% of variance (decorrelates the highly
+                 redundant distance features and reduces dimensionality)
+              -> KMeans, k = 30 clusters, n_init = 10, fixed random seed.
+    Output: a "pose cluster" label per window. k = 30 was chosen as a moderate
+    granularity; the qualitative results were checked to be stable across k.
+    [kp_cluster_compare.embed / cluster]
+
+6.2 IMU clusters (the KNOWN prior)
+    Not re-computed here -- these are the pre-existing func codebook from the IMU
+    pipeline: 111 (2lc) / 91 (2mp) distinct clusters present in week 8. They are
+    a fine VECTOR QUANTIZATION of the IMU feature stream.
+
+6.3 Sub-clustering within an IMU cluster (Section 8.2)
+    HDBSCAN (density-based; labels sparse points as "noise" = -1) on the pose
+    embedding of one IMU cluster's windows. min_cluster_size = max(5, 10% of the
+    IMU cluster's window count). Chosen because we expected, and wanted to detect,
+    "a few dense pose modes + noise" rather than a forced fixed k.
+
+6.4 Hierarchical grouping of pose clusters (Section 8.3)
+    Average-linkage agglomerative clustering on a pose-cluster x pose-cluster
+    distance (1 - co-recruitment correlation), visualized as a DENDROGRAM.
+
+--------------------------------------------------------------------------------
+7. THE IMU SIMILARITY MATRIX  (used in Sections 8.4)
+--------------------------------------------------------------------------------
+7.1 Location: data/<subject>/session_1_out.mat (MATLAB v7.3 / HDF5), dataset
+    /Clusters/sim. It is an ALL-WEEKS window x window IMU similarity:
+    113,627 x 113,627 (2lc) / 113,597 x 113,597 (2mp).
+7.2 Scale: values <= 0, self-similarity (diagonal) = 0, more-negative = less
+    similar (a negative-distance-style similarity). The "minimum value in the
+    matrix" (~ -0.34) is the conventional Affinity-Propagation preference.
+7.3 Alignment: /Clusters/idx equals the Cluster_detail_results.csv ClusterIdx
+    column in order (verified), so sim rows correspond row-for-row to detail
+    rows. We extract the week-8 block in the SAME Timestamp-sorted order used by
+    build_windows, then symmetrize. A direct check confirms the extracted block's
+    per-window IMU labels equal the analysis windows' labels exactly.
+    [kp_pose_prior_imu.extract_sim_from_mat]
+
+--------------------------------------------------------------------------------
+8. STEP-BY-STEP METHOD: CLUSTERING POSES UNDER KNOWN IMU CLUSTERS
+--------------------------------------------------------------------------------
+All steps operate on the per-window POSTURE features and the per-window IMU
+ClusterIdx, aligned as in Section 5.
+
+8.0  Define transitional vs sustained windows  [kp_silhouette.py]
+     Pose space is continuous, so windows captured mid-movement sit between
+     cluster cores and blur boundaries. We quantify this:
+       - SILHOUETTE score per window (how well it fits its pose cluster vs the
+         next-nearest; range -1..+1).
+       - "Transitional-ness" = the window's MOTION magnitude (mean |deformation
+         rate|).
+     Finding: silhouette falls strongly as transitional-ness rises
+     (Spearman -0.51 lc / -0.63 mp), confirming that transitional windows are the
+     boundary-blurring ones. Some k-means clusters are really "transition bins"
+     (high motion, ~0 silhouette) rather than true sustained postures.
+
+8.1  Aligned subset: which IMU clusters map cleanly to a pose?
+     [kp_aligned_clusters.py]
+     Build the IMU x pose contingency table. For each IMU cluster, find its
+     best-matching pose cluster and score the match with:
+       PURITY  = P(pose = best | IMU)              (concentration)
+       LIFT    = purity / P(pose = best)           (enrichment over chance)
+       JACCARD = overlap / union of the two sets   (one-to-one-ness)
+       p       = HYPERGEOMETRIC survival probability (chance of overlap this big)
+     Multiple-testing controlled by Bonferroni across IMU clusters.
+     Finding: most IMU clusters have no posture signature, BUT a real minority do
+     -- the rest/low-motion mode maps onto the dominant resting posture at
+     65-79% purity (p ~ 1e-33..1e-39), and a handful of specific behaviors are
+     enriched 5-12x into interpretable postures (forelimb spread, body
+     elongation, snout extension, head-turn).
+
+8.2  Conditional pose modes: sub-cluster poses under each IMU cluster
+     [kp_conditional_pose.py]
+     For each IMU cluster with >= 40 windows, run HDBSCAN on its windows' pose
+     embedding. Report number of pose MODES, the share of windows in the top
+     mode(s), and the NOISE fraction.
+     Finding: most IMU behaviors resolve into a few dominant pose modes + noise
+     (50/60 lc and 35/53 mp are "clean": few modes, >=40% covered, <=60% noise;
+     median 2-3 modes). I.e. a given IMU behavior is realized by a small set of
+     postures, not an unstructured smear.
+
+8.3  Pose grouping: do the recruited poses co-occur beyond chance?
+     [kp_pose_grouping.py]
+     - Global test: chi-square on the IMU x pose table, with CRAMER'S V as a
+       sample-size-normalized effect size.
+     - CO-RECRUITMENT: describe each pose cluster by its column of STANDARDIZED
+       PEARSON RESIDUALS over IMU clusters (how enriched/depleted it is in each
+       IMU behavior vs independence). Two pose clusters "co-recruit" when these
+       residual profiles correlate -- they are favored by the same IMU behaviors.
+       A PERMUTATION null (shuffle pose labels, keep IMU fixed) gives a per-pair
+       z-score; pairs with z > 2.58 are co-recruited beyond chance (p < 0.01).
+     - Group the pose clusters by 1 - profile-correlation (average linkage) and
+       draw the DENDROGRAM ("pose super-groups").
+     - Cross-reference: a MANTEL test (rank correlation of two distance matrices)
+       between co-recruitment distance and pose-centroid GEOMETRIC distance.
+     Findings: association is highly significant but modest (Cramer's V ~ 0.19);
+     27 (lc) / 39 (mp) pose pairs co-recruit beyond chance (vs ~2 expected),
+     forming coherent posture families. CRUCIALLY the Mantel vs geometry is ~0 --
+     the IMU-driven grouping of poses is NOT just "geometrically similar poses
+     cluster together"; it is a genuine cross-modal axis.
+
+8.4  Cross-modal coherence: does IMU similarity predict pose recruitment?
+     [kp_imu_pose_coherence.py]   (KEY RESULT)
+     Represent each IMU cluster two ways:
+       - POSE PROFILE = P(pose | IMU), its distribution over the 30 pose clusters
+         (its "pose mode set").
+       - IMU-space position via the similarity matrix (Section 7), aggregated to
+         an IMU-cluster x IMU-cluster MEAN-SIMILARITY matrix.
+     MANTEL test (permutation): IMU-space distance vs pose-profile distance
+     (JENSEN-SHANNON divergence between the P(pose|IMU) distributions).
+       - Positive => IMU-similar behaviors recruit similar postures (COHERENT).
+       - ~0      => pose recruitment is independent of IMU similarity.
+     Findings: STRONG coherence -- Spearman +0.60 (lc) / +0.70 (mp), p ~ 5e-4.
+     This holds even after removing the REST FAMILY (rest-dominated IMU clusters
+     and the large low-motion "rest" pose clusters): wk8lc stays at +0.39 on 40
+     active clusters (p ~ 5e-4). (wk8mp's no-rest cell is directionally +0.85 but
+     rests on only 8 clusters -- underpowered, because in mp ~52/60 IMU clusters
+     are rest-dominated.)
+     Interpretation: the cross-modal signal lives in RELATIONAL STRUCTURE, not in
+     coincident hard labels. Window-by-window agreement is weak (AMI ~ 0.05; see
+     8.5), yet the GEOMETRY of the IMU-cluster space maps onto the geometry of the
+     pose-recruitment space. The IMU->posture map is coherent but non-trivial: it
+     preserves IMU relational structure while reorganizing pose space along an
+     axis that is not raw posture shape.
+
+8.5  Window-level baseline (for contrast)  [kp_cluster_compare.py]
+     ADJUSTED MUTUAL INFORMATION (AMI) between the pose-cluster labels and the
+     IMU ClusterIdx labels, window by window. AMI ~ 0.05 (both sessions), barely
+     above a label-shuffle floor and flat across k = 30..120 -- so the two
+     HARD PARTITIONS do not coincide. The contrast between this weak AMI and the
+     strong relational coherence in 8.4 is the headline of the whole analysis.
+
+8.6  Rarefaction: is the grouping structure robust / saturated?
+     [kp_pose_grouping_rarefaction.py]
+     Subsample windows (pose & IMU labels fixed) at increasing depths; at each
+     depth recompute Cramer's V and the count of beyond-chance co-recruited pairs,
+     with confidence bands over repeated draws.
+     Findings:
+       - Cramer's V converges to 0.187 in BOTH sessions; small-sample estimates
+         are biased HIGH (~0.47 at 500 windows). So V ~ 0.19 is robust, but a V
+         from a few hundred windows would overstate the effect ~2.5x.
+       - The co-recruited-pair COUNT is NOT saturated -- still rising at full N --
+         so 27/39 are LOWER BOUNDS; the grouping is power-limited.
+       - At every matched depth, mp shows more grouping than lc, so mp's richer
+         structure is real, not a sampling artifact.
+
+--------------------------------------------------------------------------------
+9. CURRENT CONCLUSION  (2-session pilot)
+--------------------------------------------------------------------------------
+Within the scope "clustering poses under known IMU clusters":
+
+  * Hard window-by-window agreement between IMU behavior and posture is weak
+    (AMI ~ 0.05).
+  * Yet the modalities are strongly coherent at the RELATIONAL level: IMU
+    behaviors that are similar in IMU space recruit similar posture distributions
+    (Mantel +0.60..+0.70; +0.39 among active, non-rest behaviors).
+  * Most individual IMU behaviors resolve into a few characteristic posture modes
+    (HDBSCAN), and the recruited poses co-occur in coherent families beyond chance
+    -- but along a cross-modal axis that is NOT reducible to posture geometry.
+  * Effect size (Cramer's V ~ 0.19) is modest but robustly estimated; the number
+    of detectable co-recruitment relationships is currently power-limited.
+
+In one line: knowing the IMU behavior tells you a specific, coherent thing about
+posture distribution, even though no single posture pins down the exact IMU
+codeword.
+
+--------------------------------------------------------------------------------
+10. LIMITATIONS & FUTURE WORK (week-by-week)
+--------------------------------------------------------------------------------
+  * Only 2 sessions, single week (week 8). The co-recruitment pair counts are not
+    saturated (Section 8.6), so more data should reveal more structure.
+  * The "rest family" inflates several statistics; it has been controlled for but
+    in wk8mp this leaves few active clusters -- more data would fix the power.
+  * 30 fps and the shared-start assumption are taken as exact; no per-frame sync
+    signal is used. A drift of ~0.1% fps would slip the tail of the alignment by
+    a few windows.
+  * FUTURE: with enough sessions to run a WEEK-BY-WEEK analysis, we expect much
+    sharper results. The IMU pipeline already tracks behavior across weeks
+    (disease progression, drug conditions); adding the geometric/posture modality
+    means each behavioral state can be characterized by BOTH its motion signature
+    AND its posture signature over time. The relational-coherence framework here
+    (Mantel of IMU-space vs pose-recruitment) is the natural statistic to track
+    longitudinally, and rarefaction provides the fair cross-week comparison at
+    equal sampling depth.
+
+--------------------------------------------------------------------------------
+11. FILE INDEX
+--------------------------------------------------------------------------------
+  kp_features.py              load/clean keypoints, pairwise distances, scale
+                              normalize, deformation rate, window alignment
+  kp_cluster_compare.py       build_windows(); pose embedding+KMeans; AMI baseline
+  kp_aligned_clusters.py      8.1 aligned subset (purity/lift/jaccard/hypergeom)
+  kp_conditional_pose.py      8.2 HDBSCAN pose modes under each IMU cluster
+  kp_pose_grouping.py         8.3 chi2/Cramer's V, co-recruitment, dendrogram,
+                              Mantel-vs-geometry
+  kp_imu_pose_coherence.py    8.4 Mantel: IMU similarity vs pose recruitment
+                              (+ --exclude-rest)
+  kp_pose_grouping_rarefaction.py  8.6 rarefaction curves
+  kp_pose_prior_imu.py        reverse direction (out of scope) + sim extraction
+  Outputs: *_contingency.png, *_aligned_clusters.csv, *_conditional_pose.csv,
+           *_pose_dendrogram.png, *_pose_corecruit_z.csv, *_silhouette.png,
+           *_imu_pose_coherence[_norest].png, pose_grouping_rarefaction.png,
+           ami_results.csv
+
+--------------------------------------------------------------------------------
+12. APPENDIX -- GLOSSARY
+--------------------------------------------------------------------------------
+EKS (Ensemble Kalman Smoother)
+    The pose-estimation smoother that produced the 3D keypoints; fuses multiple
+    camera views and reports per-axis posterior variance.
+
+IMU / func cluster / ClusterIdx / "the prior" / codebook
+    The pre-existing behavioral clustering from head-mounted inertial data. Each
+    window has one discrete IMU cluster label (ClusterIdx, a.k.a. the "func"
+    label). 111 (2lc) / 91 (2mp) clusters in week 8. Treated as KNOWN input.
+
+Window
+    One IMU clustering unit, ~0.345 s (~60 raw IMU samples, ~10.6 video frames).
+    All analyses are at window resolution.
+
+Frame-unanchored
+    Keypoints have no global/gravitational reference frame; absolute coordinates
+    are arbitrary and differ between sessions. Forces the use of internal geometry.
+
+Internal geometry / pairwise distance matrix
+    The set of distances between keypoints within a single frame. Invariant to
+    translation and rotation (and reflection). 105 values from 15 keypoints.
+
+Common keypoints
+    The 15 keypoints present in BOTH sessions (the full 17 minus paw_front_left
+    and back_base, which are absent in wk8mp).
+
+Posterior variance
+    EKS per-coordinate uncertainty. Available for confidence weighting; currently
+    unused beyond being loaded.
+
+Scale normalization
+    Dividing all of a session's distances by that session's median distance, to
+    remove fixed body-size/camera scale while preserving posture variation.
+
+Posture features
+    The 105 scale-normalized pairwise distances per frame/window -- a static
+    description of body shape.
+
+Motion features / deformation rate
+    Time-derivative (Savitzky-Golay) of the posture features: how fast internal
+    geometry changes. An INTERNAL-frame quantity, distinct from IMU global-frame
+    dynamics and from locomotor speed.
+
+Transitional vs sustained
+    A window is "transitional" if its deformation rate is high (and silhouette
+    low) -- caught mid-movement; "sustained" if low deformation / high silhouette
+    -- a held posture.
+
+Silhouette
+    Per-item clustering-fit score in [-1, +1]: how much closer an item is to its
+    own cluster than to the next-nearest. High = well-clustered core.
+
+Shared start trigger
+    The assumption (true for this rig) that camera and IMU began simultaneously,
+    so video frame 0 = IMU window 0; the basis for temporal reconciliation.
+
+Pose cluster / pose mode
+    "Pose cluster": a KMeans cluster (k=30) of posture features. "Pose mode": a
+    dense pose grouping found by HDBSCAN within a single IMU cluster's windows.
+
+KMeans / PCA / StandardScaler
+    The pose-clustering pipeline: z-score features, reduce to 95%-variance PCA
+    components, partition into k=30 clusters.
+
+HDBSCAN
+    Density-based clustering that finds a variable number of dense clusters and
+    labels sparse points as NOISE (-1). Used to find "a few pose modes + noise"
+    under each IMU cluster.
+
+Noise (fraction)
+    Share of an IMU cluster's windows HDBSCAN leaves unassigned (label -1).
+
+Vector quantization
+    Representing a continuous signal by discrete cluster/codebook labels; what the
+    IMU pipeline does to the inertial stream (hence "codebook").
+
+Contingency table
+    The IMU-cluster x pose-cluster matrix of window counts; the basis for purity,
+    chi-square, residuals, and co-recruitment.
+
+Purity / Lift / Jaccard
+    For an IMU->pose match: purity = fraction of the IMU cluster in its best pose;
+    lift = purity divided by that pose's overall frequency (enrichment over
+    chance); Jaccard = overlap / union of the two window sets.
+
+Hypergeometric test
+    Probability that an IMU/pose overlap as large as observed would occur by
+    chance given the two set sizes; yields the p-value for an alignment.
+
+Bonferroni
+    Conservative multiple-testing correction (multiply p by number of tests).
+
+Chi-square / Cramer's V
+    Chi-square tests whether IMU and pose are independent; Cramer's V rescales it
+    to a 0-1 effect size (~0.19 here = weak-moderate, robustly estimated).
+
+Standardized Pearson residual
+    (observed - expected)/sqrt(expected) for a contingency cell; how enriched or
+    depleted a pose is in an IMU behavior relative to independence. The per-pose
+    vector of these over IMU clusters is its "co-recruitment profile."
+
+Co-recruitment
+    Two pose clusters co-recruit when they are enriched in the SAME IMU behaviors
+    (their residual profiles correlate). Tested for significance by permutation.
+
+Permutation test
+    Significance by repeatedly shuffling labels to build a null distribution, then
+    locating the real statistic within it. Used for co-recruitment z-scores and
+    for Mantel p-values.
+
+Dendrogram / super-group
+    Tree from hierarchical clustering of the pose clusters by co-recruitment
+    distance; cutting it yields pose "super-groups" (posture families).
+
+Mantel test
+    Rank correlation between two distance matrices over the same items, with a
+    permutation p-value. Used twice: (a) co-recruitment vs pose geometry (~0), and
+    (b) IMU-space distance vs pose-recruitment distance (+0.60..+0.70, the key
+    result).
+
+Pose profile / pose mode set
+    P(pose | IMU): an IMU cluster's distribution over the 30 pose clusters -- the
+    set of postures it recruits, and how often.
+
+Jensen-Shannon divergence/distance
+    A symmetric, bounded measure of how different two probability distributions
+    are; used to compare two IMU clusters' pose profiles.
+
+Mean-similarity matrix
+    IMU-cluster x IMU-cluster matrix whose entries are the average window-level
+    IMU similarity between the two clusters' windows; the IMU-space geometry.
+
+Relational structure / coherence
+    Agreement at the level of BETWEEN-CLUSTER relationships (which behaviors are
+    near which) rather than coincident hard labels. The central finding: IMU and
+    pose are relationally coherent (Mantel +0.6..+0.7) despite weak label-level
+    agreement (AMI ~0.05).
+
+Rest family
+    The low-motion "rest" pose cluster(s) (large + bottom-quartile deformation)
+    and the IMU clusters dominated by them. A known skew; excluded as a robustness
+    check (kp_imu_pose_coherence.py --exclude-rest).
+
+AMI / NMI (Adjusted / Normalized Mutual Information)
+    Information shared between two label sets, window by window. AMI is chance-
+    adjusted, so comparable across differing cluster counts. ~0.05 here.
+
+Rarefaction
+    Subsampling to a common depth (repeatedly) to remove sample-size bias and test
+    whether a statistic has saturated. Shows Cramer's V converges (~0.19) while the
+    co-recruited-pair count does not (a lower bound).
+================================================================================
