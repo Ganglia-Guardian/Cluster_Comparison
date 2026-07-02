@@ -24,8 +24,12 @@ A cluster's verdict comes from occ3d against tunable bands (defaults):
     otherwise               -> grey (leaning 2D/3D but not decisive)
 
 Cluster ids are only meaningful WITHIN one (mouse, batch) clustering, so every
-verdict is computed per (mouse, batch). 2mp/w10 has no MATLAB output and is
-skipped. Frames whose Folder_Name is NaN (segment boundaries) are dropped.
+verdict is computed per (mouse, batch). Batches whose folder is empty/missing
+(no Cluster_detail_results.csv) are skipped. Frames whose Folder_Name is NaN
+(segment boundaries) are dropped.
+
+Data layout (flat): data/<mouse>_arena_compare/arena_compare_w<N>/ holds the
+MATLAB Cluster_detail_results.csv and session_1_out.mat directly.
 
 Run:
     uv run python arena_analysis/cluster_arena_exclusivity.py
@@ -43,7 +47,7 @@ ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data"
 OUT = ROOT / "output" / "exclusivity"
 _ARENA_LABEL = re.compile(r"(\d+(?:mp|lc)[a-z0-9_]*)_arena_compare", re.I)
-_ARENA_BATCH = re.compile(r"arena_compare_(w\d+)_stitched", re.I)
+_ARENA_BATCH = re.compile(r"arena_compare_(w\d+)", re.I)
 
 
 def discover_mice(data_dir=DATA):
@@ -84,11 +88,18 @@ VERDICT_COLORS = {
 }
 
 
+# The 2D-arena suffix is written inconsistently across mice: week8_O (1mp/2mp),
+# week8_o (3mp), week_8_o (1lc/2lc). Accept an optional underscore after "week"
+# and a case-insensitive trailing _o; its presence means the flat/2D arena.
+_SEG = re.compile(r"week_?(\d+)(_o)?$", re.I)
+
+
 def parse_segment(label):
-    """'week8_O' -> (8, '2D');  'week8' -> (8, '3D');  else (None, None)."""
+    """weekN[_o] (2D flat) or weekN (3D) -> (week, arena); else (None, None).
+    Tolerates the _O/_o/_ suffix variants seen across mice."""
     if not isinstance(label, str):
         return None, None
-    m = re.match(r"week(\d+)(_O)?$", label.strip())
+    m = _SEG.match(label.strip())
     if not m:
         return None, None
     return int(m.group(1)), ("2D" if m.group(2) else "3D")
@@ -104,10 +115,24 @@ def classify(occ3d, excl, shared):
     return "grey"
 
 
+def batch_dir(mouse_dir, batch):
+    """Folder holding one batch's MATLAB results (flat layout, no mat_results/)."""
+    return DATA / mouse_dir / f"arena_compare_{batch}"
+
+
+def mat_csv(mouse_dir, batch):
+    """Path to a batch's Cluster_detail_results.csv (may not exist -> skip)."""
+    return batch_dir(mouse_dir, batch) / "Cluster_detail_results.csv"
+
+
+def session_mat(mouse_dir, batch):
+    """Path to a batch's session_1_out.mat (may not exist -> skip)."""
+    return batch_dir(mouse_dir, batch) / "session_1_out.mat"
+
+
 def load_mat_frames(mouse_dir, batch):
     """Per-frame (cluster, week, arena) for one MATLAB clustering, or None."""
-    path = DATA / mouse_dir / f"arena_compare_{batch}_stitched" / "mat_results" \
-        / "Cluster_detail_results.csv"
+    path = mat_csv(mouse_dir, batch)
     if not path.exists():
         return None
     df = pd.read_csv(path)

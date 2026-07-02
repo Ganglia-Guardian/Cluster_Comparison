@@ -1,10 +1,11 @@
 """Attach per-bin functional features (incl. total body acceleration) to the
 MATLAB arena cluster frames, for every batch.
 
-For each `<mouse>_arena_compare_<wN>_stitched/mat_results/`, we bin the features
-in session_1_out.mat (60 samples/window -> one value per cluster row) via
+For each `<mouse>_arena_compare/arena_compare_w<N>/`, we bin the features in
+session_1_out.mat (60 samples/window -> one value per cluster row) via
 feature_extraction.combine_results, attach week/arena from Folder_Name, drop
-NaN-segment boundary frames, and concatenate.
+NaN-segment boundary frames, and concatenate. Batches with an empty/missing
+folder are skipped.
 
 Output: arena_analysis/frame_features.csv with columns
     mouse, batch, week, arena, cluster, anterior_posterior_x_accel,
@@ -21,16 +22,16 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT.parent))          # import the repo-root extractor
 from feature_extraction import FEATURE_NAMES, combine_results
 
-from cluster_arena_exclusivity import BATCHES, DATA, MICE, parse_segment
+from cluster_arena_exclusivity import (BATCHES, MICE, mat_csv, parse_segment,
+                                       session_mat)
 
 
 def main():
     parts = []
     for mouse_dir, mouse in MICE.items():
         for batch in BATCHES:
-            base = DATA / mouse_dir / f"arena_compare_{batch}_stitched" / "mat_results"
-            mat, csv = base / "session_1_out.mat", base / "Cluster_detail_results.csv"
-            if not mat.exists():
+            mat, csv = session_mat(mouse_dir, batch), mat_csv(mouse_dir, batch)
+            if not (mat.exists() and csv.exists()):
                 print(f"  {mouse}/{batch}: no MATLAB output, skipped")
                 continue
             clu = pd.read_csv(csv)

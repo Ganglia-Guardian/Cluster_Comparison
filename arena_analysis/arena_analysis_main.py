@@ -7,7 +7,6 @@ as its own subprocess with the repo root as the working directory and both this
 folder and the repo root on PYTHONPATH.
 
 Dependency order:
-    build_frame_table            -> frame_table.csv
     cluster_arena_exclusivity    -> output/exclusivity/cluster_verdicts.csv
     build_feature_table          -> frame_features.csv
     arena_occupancy_drift        (reads exclusivity + mat data)
@@ -48,7 +47,6 @@ class Stage:
 
 # Ordered pipeline. `accepts` uses argparse dest names (see FORWARD below).
 STAGES = [
-    Stage("build_frame_table", "build_frame_table.py"),
     Stage("cluster_arena_exclusivity", "cluster_arena_exclusivity.py",
           accepts=["excl", "shared"]),
     Stage("build_feature_table", "build_feature_table.py"),

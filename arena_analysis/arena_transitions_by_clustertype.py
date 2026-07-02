@@ -39,7 +39,8 @@ sys.path.insert(0, str(ROOT.parent))
 from cluster_transition_compare import fanout_by_week           # noqa: E402
 from cluster_successor_diversity import rarefied_diversity      # noqa: E402
 
-from cluster_arena_exclusivity import BATCHES, DATA, MICE, parse_segment  # noqa: E402
+from cluster_arena_exclusivity import (BATCHES, MICE, mat_csv,  # noqa: E402
+                                       parse_segment)
 
 OUT = ROOT / "output" / "transitions_by_clustertype"
 # subset -> (home arena, plot colour, plot style)
@@ -48,8 +49,7 @@ SUBSETS = {"primarily-2D": ("2D", "#d62728", "--"),
 
 
 def load_full(mouse_dir, batch):
-    csv = (DATA / mouse_dir / f"arena_compare_{batch}_stitched" / "mat_results"
-           / "Cluster_detail_results.csv")
+    csv = mat_csv(mouse_dir, batch)
     if not csv.exists():
         return None
     df = pd.read_csv(csv)

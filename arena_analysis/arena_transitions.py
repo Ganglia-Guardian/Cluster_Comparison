@@ -35,7 +35,8 @@ sys.path.insert(0, str(ROOT.parent))
 from cluster_transition_compare import fanout_by_week           # noqa: E402
 from cluster_successor_diversity import rarefied_diversity      # noqa: E402
 
-from cluster_arena_exclusivity import BATCHES, DATA, MICE, parse_segment  # noqa: E402
+from cluster_arena_exclusivity import (BATCHES, MICE, mat_csv,  # noqa: E402
+                                       parse_segment)
 
 OUT = ROOT / "output" / "transitions"
 ARENAS = ["2D", "3D"]
@@ -46,8 +47,7 @@ ARENA_COLOR = {"2D": "#d62728", "3D": "#1f77b4"}
 def masked_df(mouse_dir, batch, arena):
     """MATLAB frame table with only `arena`'s segments keeping their Folder_Name;
     all other rows masked to NaN so they act as sequence breaks."""
-    csv = (DATA / mouse_dir / f"arena_compare_{batch}_stitched" / "mat_results"
-           / "Cluster_detail_results.csv")
+    csv = mat_csv(mouse_dir, batch)
     if not csv.exists():
         return None
     df = pd.read_csv(csv)
