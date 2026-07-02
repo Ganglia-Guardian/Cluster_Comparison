@@ -43,7 +43,21 @@ from cluster_transition_labels import (IDX_COL, WEEK_COL, build_transitions,
 
 CSV_NAME = "Cluster_detail_results.csv"
 DATA_ROOT = Path("data")
-DEFAULT_DATASETS = ["1lc", "2lc", "1mp", "2mp", "3mp"]
+
+
+def discover_datasets(data_root=DATA_ROOT):
+    """Every dataset dir under data/ holding a Cluster_detail_results.csv, sorted.
+
+    Auto-discovered so a new data/<mouse>/ (e.g. 1mp_open) is included by default
+    without editing this list. Pass --datasets to override.
+    """
+    root = Path(data_root)
+    if not root.is_dir():
+        return []
+    return sorted(d.name for d in root.iterdir() if (d / CSV_NAME).is_file())
+
+
+DEFAULT_DATASETS = discover_datasets()
 MIN_FRAME_FRAC = 0.5   # drop weeks with < this fraction of the dataset's median frames
 
 

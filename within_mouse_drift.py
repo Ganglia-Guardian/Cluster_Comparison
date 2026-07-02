@@ -157,7 +157,7 @@ def plot_combined(per_ds, out_path):
     for ds, (df, k, used, rho, p) in per_ds.items():
         reg = df[~df["variant"]]
         c = colors.get(ds, None)
-        tag = "MitoPark" if ds.endswith("mp") else "control"
+        tag = "MitoPark" if "mp" in ds.lower() else "control"
         ax.plot(reg["week_num"], reg["drift_js"], "o-", color=c,
                 label=f"{ds} ({tag}); rho={rho:.2f}, p={p:.2g}")
         for _, r in df[df["variant"]].iterrows():

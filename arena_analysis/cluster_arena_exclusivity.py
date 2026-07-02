@@ -42,8 +42,40 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data"
 OUT = ROOT / "output" / "exclusivity"
-MICE = {"042025_1mp_arena_compare": "1mp", "042025_2mp_arena_compare": "2mp"}
-BATCHES = ["w8", "w9", "w10"]
+_ARENA_LABEL = re.compile(r"(\d+(?:mp|lc)[a-z0-9_]*)_arena_compare", re.I)
+_ARENA_BATCH = re.compile(r"arena_compare_(w\d+)_stitched", re.I)
+
+
+def discover_mice(data_dir=DATA):
+    """Map each '<...>_arena_compare' data dir to its short label (042025_1mp_
+    arena_compare -> 1mp). Auto-discovered so a new arena_compare mouse dir is
+    picked up with no code change."""
+    out = {}
+    if Path(data_dir).is_dir():
+        for d in sorted(Path(data_dir).iterdir()):
+            m = _ARENA_LABEL.search(d.name)
+            if d.is_dir() and m:
+                out[d.name] = m.group(1)
+    return out
+
+
+def discover_batches(data_dir=DATA, mice=None):
+    """Union of stitched batch tags (w8, w9, ...) across the mouse dirs, in week
+    order."""
+    mice = mice if mice is not None else discover_mice(data_dir)
+    found = set()
+    for mouse_dir in mice:
+        base = Path(data_dir) / mouse_dir
+        if base.is_dir():
+            for sub in base.iterdir():
+                m = _ARENA_BATCH.search(sub.name)
+                if m:
+                    found.add(m.group(1))
+    return sorted(found, key=lambda b: int(b[1:]))
+
+
+MICE = discover_mice()
+BATCHES = discover_batches(mice=MICE)
 
 MIN_FRAMES = 50          # clusters smaller than this are flagged low_n (noisy occ)
 VERDICT_COLORS = {

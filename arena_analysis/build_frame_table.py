@@ -26,8 +26,39 @@ from sklearn.metrics import adjusted_mutual_info_score
 
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data"
-MICE = {"042025_1mp_arena_compare": "1mp", "042025_2mp_arena_compare": "2mp"}
-BATCHES = ["w8", "w9", "w10"]
+
+# Auto-discovered (same rule as cluster_arena_exclusivity) so a new
+# '<...>_arena_compare' mouse dir or a new stitched batch is picked up with no
+# code change: 042025_1mp_arena_compare -> "1mp".
+_ARENA_LABEL = re.compile(r"(\d+(?:mp|lc)[a-z0-9_]*)_arena_compare", re.I)
+_ARENA_BATCH = re.compile(r"arena_compare_(w\d+)_stitched", re.I)
+
+
+def discover_mice(data_dir=DATA):
+    out = {}
+    if Path(data_dir).is_dir():
+        for d in sorted(Path(data_dir).iterdir()):
+            m = _ARENA_LABEL.search(d.name)
+            if d.is_dir() and m:
+                out[d.name] = m.group(1)
+    return out
+
+
+def discover_batches(data_dir=DATA, mice=None):
+    mice = mice if mice is not None else discover_mice(data_dir)
+    found = set()
+    for mouse_dir in mice:
+        base = Path(data_dir) / mouse_dir
+        if base.is_dir():
+            for sub in base.iterdir():
+                m = _ARENA_BATCH.search(sub.name)
+                if m:
+                    found.add(m.group(1))
+    return sorted(found, key=lambda b: int(b[1:]))
+
+
+MICE = discover_mice()
+BATCHES = discover_batches(mice=MICE)
 
 
 def parse_segment(label):

@@ -38,8 +38,25 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-MICE = ["1lc", "1mp", "2lc", "2mp", "3mp"]
 DATA = "data"
+
+
+def discover_mice(data_dir=DATA):
+    """Every mouse under data/ with a Cluster_detail_results.csv, sorted.
+
+    Auto-discovered so dropping in a new data/<mouse>/ folder (e.g. 1mp_open)
+    is picked up with no code change. Run from the repo root (the pipeline
+    runner sets that as the working directory).
+    """
+    if not os.path.isdir(data_dir):
+        return []
+    return sorted(
+        name for name in os.listdir(data_dir)
+        if os.path.isfile(os.path.join(data_dir, name, "Cluster_detail_results.csv"))
+    )
+
+
+MICE = discover_mice()
 OUT = "degeneracy_analysis/out"
 
 MIN_COUNT = 200          # drop clusters with fewer total obs over natural weeks
