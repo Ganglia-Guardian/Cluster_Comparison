@@ -37,8 +37,14 @@ Combined (data/):
 
 Run:
     python cluster_successor_diversity.py
+    python cluster_successor_diversity.py --arena 3d      # high-tier only
+    python cluster_successor_diversity.py --arena open    # *_open datasets only
     python cluster_successor_diversity.py --datasets 1mp 2mp 3mp --depth 20
     python cluster_successor_diversity.py --depth 15 --reps 200
+
+The --arena {both,open,3d} flag selects open-field (*_open), 3d/high-tier
+(everything else), or both (default); subset runs write a suffixed summary
+(successor_diversity_over_time_{open,3d}.png) so the 'both' plot is preserved.
 """
 
 import argparse
@@ -144,39 +150,42 @@ def plot_ridgeline(res, metric, name, depth, out_path):
     return out_path
 
 
-def plot_summary(per_dataset, depth, out_path):
-    """Median, spread (IQR) and bimodality of the rarefied-richness distribution
-    vs week, every dataset overlaid. Rising spread / bimodality in disease but not
-    control is the signature of the repertoire splitting into two modes."""
-    cmap = plt.get_cmap("tab10")
-    fig, axes = plt.subplots(1, 3, figsize=(16, 5))
-    for i, (name, res) in enumerate(per_dataset):
-        if res.empty:
-            continue
-        weeks = sorted(res["wn"].unique())
-        med = [res.loc[res.wn == w, "richness"].median() for w in weeks]
-        iqr = [res.loc[res.wn == w, "richness"].quantile(.75)
-               - res.loc[res.wn == w, "richness"].quantile(.25) for w in weeks]
-        bc = [bimodality_coef(res.loc[res.wn == w, "richness"]) for w in weeks]
-        color, style = cmap(i % 10), ("--" if cohort(name) == "lc" else "-")
-        for ax, y in zip(axes, (med, iqr, bc)):
-            yv = np.array(y, float)
-            ok = ~np.isnan(yv)
-            rho, p = spearmanr(np.array(weeks)[ok], yv[ok]) if ok.sum() > 2 else (np.nan, np.nan)
-            ax.plot(weeks, yv, style, marker="o", ms=4, color=color,
-                    label=f"{name}: rho={rho:.2f}, p={p:.3f}")
+def _legend_order_key(name):
+    """Sort datasets *lc-ascending then *mp-ascending: (cohort, numeric prefix,
+    name). cohort 'lc' < 'mp' alphabetically; leading digits give within-cohort
+    order. Robust to added datasets / multi-digit prefixes."""
+    lead = ""
+    for ch in name:
+        if ch.isdigit():
+            lead += ch
+        else:
+            break
+    return (cohort(name), int(lead) if lead else 0, name)
 
-    titles = ["Median rarefied richness", "Spread (IQR) of richness",
-              "Bimodality coefficient of richness"]
-    for ax, t in zip(axes, titles):
-        ax.set_xlabel("disease week"); ax.set_title(t); ax.grid(alpha=0.3)
-        ax.legend(fontsize=7)
-    axes[2].axhline(5 / 9, ls=":", color="black", lw=1)
-    axes[2].text(axes[2].get_xlim()[0], 5 / 9 + 0.01, "bimodal threshold (0.556)",
-                 fontsize=7)
-    fig.suptitle("Per-cluster successor-richness distribution over disease "
-                 f"(rarefied to {depth})  -- dashed = control, solid = MitoPark",
-                 y=1.02)
+
+def plot_summary(per_dataset, depth, out_path):
+    """Median rarefied-richness distribution vs week, every dataset overlaid.
+    (Spread/IQR and bimodality were checked previously and showed no correlation,
+    so only the median is plotted here.) Legend sorted *lc then *mp, ascending."""
+    cmap = plt.get_cmap("tab10")
+    ordered = sorted((d for d in per_dataset if not d[1].empty),
+                     key=lambda d: _legend_order_key(d[0]))
+    fig, ax = plt.subplots(figsize=(8, 5.5))
+    for i, (name, res) in enumerate(ordered):
+        weeks = sorted(res["wn"].unique())
+        med = np.array([res.loc[res.wn == w, "richness"].median() for w in weeks], float)
+        ok = ~np.isnan(med)
+        rho, p = spearmanr(np.array(weeks)[ok], med[ok]) if ok.sum() > 2 else (np.nan, np.nan)
+        style = "--" if cohort(name) == "lc" else "-"
+        ax.plot(weeks, med, style, marker="o", ms=4, color=cmap(i % 10),
+                label=f"{name}: rho={rho:.2f}, p={p:.3f}")
+
+    ax.set_xlabel("disease week")
+    ax.set_ylabel("median rarefied richness")
+    ax.set_title(f"Median rarefied successor richness over disease "
+                 f"(rarefied to {depth})\ndashed = control (lc), solid = MitoPark (mp)")
+    ax.grid(alpha=0.3)
+    ax.legend(fontsize=8)
     fig.tight_layout()
     fig.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
@@ -187,6 +196,9 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--datasets", nargs="+", default=DEFAULT_DATASETS)
+    ap.add_argument("--arena", choices=["both", "open", "3d"], default="both",
+                    help="which arena to include: open (*_open datasets), 3d "
+                         "(high-tier, everything else), or both (default)")
     ap.add_argument("--depth", type=int, default=DEPTH,
                     help="rarefaction depth (out-transitions per cluster)")
     ap.add_argument("--reps", type=int, default=REPS,
@@ -194,8 +206,14 @@ def main():
     ap.add_argument("--out-dir", type=Path, default=DATA_ROOT)
     args = ap.parse_args()
 
+    is_open = {"open": lambda n: n.endswith("_open"),
+               "3d": lambda n: not n.endswith("_open"),
+               "both": lambda n: True}[args.arena]
+    datasets = [d for d in args.datasets if is_open(d)]
+    print(f"arena={args.arena}: {datasets}")
+
     per_dataset = []
-    for name in args.datasets:
+    for name in datasets:
         res, frac = rarefied_diversity(load(name), args.depth, args.reps)
         if res.empty:
             print(f"{name}: no clusters with >= {args.depth} transitions; skipped")
@@ -212,8 +230,9 @@ def main():
         per_dataset.append((name, res))
 
     if per_dataset:
+        suffix = "" if args.arena == "both" else f"_{args.arena}"
         p = plot_summary(per_dataset, args.depth,
-                         args.out_dir / "successor_diversity_over_time.png")
+                         args.out_dir / f"successor_diversity_over_time{suffix}.png")
         print(f"Wrote {p}")
 
 
