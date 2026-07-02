@@ -53,6 +53,8 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib.lines import Line2D
+from scipy.special import gammaln
 from scipy.stats import gaussian_kde, kurtosis, skew, spearmanr
 
 from cluster_transition_compare import (DATA_ROOT, DEFAULT_DATASETS,
@@ -65,10 +67,33 @@ REPS = 100    # subsample draws averaged per cluster
 SEED = 0
 
 
+def hurlbert_richness(counts, depth):
+    """Exact EXPECTED number of distinct successors in a without-replacement
+    subsample of `depth` transitions (Hurlbert 1971 rarefaction). Deterministic --
+    replaces the Monte-Carlo estimate of richness, so there is no seed/reps noise.
+
+    E[distinct] = sum_i (1 - P(successor i absent)),  where
+    P(i absent) = C(N - n_i, depth) / C(N, depth), computed in log-gamma space.
+    A successor with fewer than `depth` 'other' transitions must appear -> P=0."""
+    counts = np.asarray(counts, dtype=float)
+    N = counts.sum()
+    if N < depth:
+        return np.nan
+    other = N - counts
+    with np.errstate(over="ignore", invalid="ignore"):
+        log_absent = (gammaln(other + 1) - gammaln(other - depth + 1)
+                      - (gammaln(N + 1) - gammaln(N - depth + 1)))
+        p_absent = np.exp(log_absent)
+    p_absent = np.where(other < depth, 0.0, p_absent)     # must-appear successors
+    return float((1.0 - p_absent).sum())
+
+
 def rarefied_diversity(df, depth=DEPTH, reps=REPS, seed=SEED):
     """Per (week, source) rarefied richness and perplexity, restricted to
     well-sampled progression weeks and to clusters with >= depth out-transitions.
-    Returns a DataFrame and the fraction of (week, source) groups kept."""
+    Richness is the exact Hurlbert expectation (deterministic); perplexity has no
+    closed form so it stays Monte-Carlo (reps draws). Returns a DataFrame and the
+    fraction of (week, source) groups kept."""
     rng = np.random.default_rng(seed)
     trans = build_transitions(df)
     frames = progression_frames(df)
@@ -85,10 +110,9 @@ def rarefied_diversity(df, depth=DEPTH, reps=REPS, seed=SEED):
         if counts.sum() < depth:
             continue
         n_kept += 1
-        # multivariate-hypergeometric subsample: draw `depth` successors without
-        # replacement from this cluster's successor multiset, `reps` times.
-        draws = rng.multivariate_hypergeometric(counts, depth, size=reps)  # (reps, S)
-        richness = float((draws > 0).sum(axis=1).mean())
+        richness = hurlbert_richness(counts, depth)          # exact, deterministic
+        # perplexity (effective successors) has no closed form -> Monte-Carlo
+        draws = rng.multivariate_hypergeometric(counts, depth, size=reps)
         p = draws / depth
         with np.errstate(divide="ignore", invalid="ignore"):
             plogp = np.where(draws > 0, p * np.log(p), 0.0)
@@ -99,6 +123,38 @@ def rarefied_diversity(df, depth=DEPTH, reps=REPS, seed=SEED):
     if not res.empty:
         res["wn"] = res["week"].map(week_sort_key).astype(int)
     return res, (n_kept / n_groups if n_groups else 0.0)
+
+
+def variant_richness(df, depth=DEPTH):
+    """Per-source Hurlbert richness for each pharmacological arm (saline, ldopa),
+    computed like the progression weeks but on the challenge-arm transitions only.
+    Returns {arm: array of per-source richness}. Saline is matched first because the
+    mp arm folders contain both 'ldopa' and 'saline' in the name."""
+    trans = build_transitions(df)
+    out = {}
+    for w in pd.unique(trans["week"]):
+        if not is_variant(w):
+            continue
+        arm = "saline" if "saline" in str(w).lower() else "ldopa"
+        vals = []
+        for _, g in trans[trans["week"] == w].groupby("source"):
+            counts = g["target"].value_counts().to_numpy()
+            if counts.sum() >= depth:
+                vals.append(hurlbert_richness(counts, depth))
+        if vals:
+            out[arm] = np.array(vals, float)
+    return out
+
+
+def boot_median_ci(vals, rng, B=2000, q=(2.5, 97.5)):
+    """Percentile-bootstrap CI for the median: resample clusters with replacement."""
+    vals = np.asarray(vals, float)
+    vals = vals[~np.isnan(vals)]
+    if len(vals) < 3:
+        return np.nan, np.nan
+    idx = rng.integers(0, len(vals), size=(B, len(vals)))
+    meds = np.median(vals[idx], axis=1)
+    return tuple(np.percentile(meds, q))
 
 
 def bimodality_coef(x):
@@ -164,30 +220,75 @@ def _legend_order_key(name):
 
 
 def plot_summary(per_dataset, depth, out_path):
-    """Median rarefied-richness distribution vs week, every dataset overlaid.
-    (Spread/IQR and bimodality were checked previously and showed no correlation,
-    so only the median is plotted here.) Legend sorted *lc then *mp, ascending."""
+    """Median rarefied-richness vs week, every dataset overlaid, with a cluster-
+    bootstrap 95% CI band. The saline (triangle) and L-DOPA (diamond) week-24
+    challenge arms are drawn after the last week -- same colour per dataset, not
+    line-connected, each with its own bootstrap CI. Legend sorted *lc then *mp,
+    ascending. (Spread/IQR and bimodality were checked before and showed no
+    correlation, so only the median is plotted.)"""
     cmap = plt.get_cmap("tab10")
+    rng = np.random.default_rng(0)
     ordered = sorted((d for d in per_dataset if not d[1].empty),
                      key=lambda d: _legend_order_key(d[0]))
-    fig, ax = plt.subplots(figsize=(8, 5.5))
-    for i, (name, res) in enumerate(ordered):
+    if not ordered:
+        return out_path
+    weeks_all = sorted({int(w) for _, res, _ in ordered for w in res["wn"].unique()})
+    wmax = weeks_all[-1]
+    sal_x, ldopa_x = wmax + 1, wmax + 2
+    arm_x = {"saline": (sal_x, "^"), "ldopa": (ldopa_x, "D")}
+
+    fig, ax = plt.subplots(figsize=(9.5, 6))
+    for i, (name, res, variants) in enumerate(ordered):
+        color = cmap(i % 10)
+        style = "--" if cohort(name) == "lc" else "-"
         weeks = sorted(res["wn"].unique())
-        med = np.array([res.loc[res.wn == w, "richness"].median() for w in weeks], float)
+        med, lo, hi = [], [], []
+        for w in weeks:
+            vals = res.loc[res.wn == w, "richness"].to_numpy()
+            med.append(np.median(vals))
+            l, h = boot_median_ci(vals, rng)
+            lo.append(l); hi.append(h)
+        med, lo, hi = np.array(med), np.array(lo), np.array(hi)
         ok = ~np.isnan(med)
         rho, p = spearmanr(np.array(weeks)[ok], med[ok]) if ok.sum() > 2 else (np.nan, np.nan)
-        style = "--" if cohort(name) == "lc" else "-"
-        ax.plot(weeks, med, style, marker="o", ms=4, color=cmap(i % 10),
+        ax.fill_between(weeks, lo, hi, color=color, alpha=0.15, lw=0)
+        ax.plot(weeks, med, style, marker="o", ms=4, color=color,
                 label=f"{name}: rho={rho:.2f}, p={p:.3f}")
+        # week-24 challenge arms: standalone markers + bootstrap CI, no connecting line
+        for arm, (xpos, mk) in arm_x.items():
+            v = variants.get(arm) if variants else None
+            if v is not None and len(v):
+                m = float(np.median(v))
+                l, h = boot_median_ci(v, rng)
+                yerr = None if np.isnan(l) else [[m - l], [h - m]]
+                ax.errorbar([xpos], [m], yerr=yerr, fmt=mk, color=color, ms=8,
+                            capsize=3, elinewidth=1, mec="black", mew=0.4, zorder=5)
 
-    ax.set_xlabel("disease week")
-    ax.set_ylabel("median rarefied richness")
+    ax.axvline(wmax + 0.5, ls=":", color="0.6", lw=1)     # progression | challenge divider
+    prog_ticks = list(range(weeks_all[0], wmax + 1, 2))
+    ticks = prog_ticks + [sal_x, ldopa_x]
+    ax.set_xticks(ticks)
+    labels = ax.set_xticklabels([str(t) for t in prog_ticks] + ["saline", "l-dopa"])
+    for lab, t in zip(labels, ticks):
+        if t in (sal_x, ldopa_x):
+            lab.set_rotation(45); lab.set_ha("right")
+            lab.set_style("italic"); lab.set_fontsize(8)
+
+    ax.set_xlabel("disease week   →   wk24 challenge")
+    ax.set_ylabel("median rarefied successor richness")
     ax.set_title(f"Median rarefied successor richness over disease "
-                 f"(rarefied to {depth})\ndashed = control (lc), solid = MitoPark (mp)")
+                 f"(rarefied to {depth}; shaded = bootstrap 95% CI)\n"
+                 f"dashed = control (lc), solid = MitoPark (mp)")
     ax.grid(alpha=0.3)
-    ax.legend(fontsize=8)
-    fig.tight_layout()
-    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    leg1 = ax.legend(fontsize=8, loc="upper left", bbox_to_anchor=(1.02, 1),
+                     title="dataset:  Spearman rho (weeks 8-24)")
+    ax.add_artist(leg1)
+    shape_handles = [
+        Line2D([0], [0], marker="^", color="0.4", ls="none", mec="black", mew=0.4, label="saline arm"),
+        Line2D([0], [0], marker="D", color="0.4", ls="none", mec="black", mew=0.4, label="L-DOPA arm"),
+    ]
+    ax.legend(handles=shape_handles, fontsize=8, loc="lower left", title="wk24 challenge")
+    fig.savefig(out_path, dpi=150, bbox_inches="tight", bbox_extra_artists=[leg1])
     plt.close(fig)
     return out_path
 
@@ -214,7 +315,8 @@ def main():
 
     per_dataset = []
     for name in datasets:
-        res, frac = rarefied_diversity(load(name), args.depth, args.reps)
+        df = load(name)
+        res, frac = rarefied_diversity(df, args.depth, args.reps)
         if res.empty:
             print(f"{name}: no clusters with >= {args.depth} transitions; skipped")
             continue
@@ -227,7 +329,8 @@ def main():
                                ds_dir / f"successor_{metric}_ridgeline.png")
             if p:
                 print(f"  wrote {p}")
-        per_dataset.append((name, res))
+        variants = variant_richness(df, args.depth)
+        per_dataset.append((name, res, variants))
 
     if per_dataset:
         suffix = "" if args.arena == "both" else f"_{args.arena}"
