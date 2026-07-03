@@ -33,18 +33,20 @@ from pathlib import Path
 
 FOLDER = Path(__file__).resolve().parent
 REPO_ROOT = FOLDER.parent
-
-def discover_mice():
-    """Mice under data/ that have a Cluster_detail_results.csv (matches
-    presence_similarity.discover_mice). Auto-picks up new data/<mouse>/ dirs."""
-    data_dir = REPO_ROOT / "data"
-    if not data_dir.is_dir():
-        return []
-    return sorted(p.name for p in data_dir.iterdir()
-                  if (p / "Cluster_detail_results.csv").is_file())
+sys.path.insert(0, str(REPO_ROOT))          # so `import dataset_config` works
+import dataset_config
 
 
-MICE = discover_mice()
+def discover_mice(root=None, glob=None, datasets=None):
+    """Mice with a Cluster_detail_results.csv under the (chosen) data root,
+    matching presence_similarity.discover_mice. Auto-picks up new dirs and
+    honours --datasets / --dataset-glob."""
+    return dataset_config.discover_datasets(
+        root if root is not None else REPO_ROOT / dataset_config.DEFAULT_DATA_ROOT,
+        glob=glob, datasets=datasets)
+
+
+MICE = discover_mice()          # default-root list, for --list / help text only
 
 
 class Stage:
@@ -91,10 +93,18 @@ def build_parser():
     g.add_argument("--python", default=sys.executable,
                    help="interpreter used to run each stage (default: this one)")
 
+    # dataset selection (threaded into every stage via env vars)
+    dataset_config.add_dataset_args(ap)
+    ap.add_argument("--out-root", type=Path, default=None,
+                    help="where the out/<mouse>/ tree is written (default: "
+                         "degeneracy_analysis/out for ./data, else "
+                         "<data-root>/degeneracy_out)")
+
     # feature_similarity
     f = ap.add_argument_group("feature_similarity")
-    f.add_argument("--mouse", choices=MICE,
-                   help="build feature.npz for one mouse only (default: all)")
+    f.add_argument("--mouse",
+                   help="build feature.npz for one mouse only (default: all); "
+                        "must be one of the selected datasets")
     return ap
 
 
@@ -146,13 +156,29 @@ def select_stages(args):
 def main(argv=None):
     args = build_parser().parse_args(argv)
 
+    # Resolve the cohort once here; every stage subprocess inherits it via env.
+    root, datasets = dataset_config.resolve_datasets(args)
+    out_root = str(args.out_root) if args.out_root else dataset_config.degen_out_root(root)
+
     if args.list:
+        print(f"Data root: {root}   out: {out_root}")
+        print(f"Datasets ({len(datasets)}): {', '.join(datasets) or '(none found)'}\n")
         print("Stages (in run order):\n")
         for i, s in enumerate(STAGES, 1):
             extra = f"  [flags: {', '.join(sorted(s.accepts))}]" if s.accepts else ""
             need = f"  (needs: {', '.join(sorted(s.needs))})" if s.needs else ""
             print(f"  {i:2d}. {s.name}{extra}{need}")
         return 0
+
+    if not datasets:
+        print(f"no datasets found under {root} "
+              f"(need <mouse>/Cluster_detail_results.csv)")
+        return 1
+    if args.mouse and args.mouse not in datasets:
+        print(f"--mouse {args.mouse!r} is not among the selected datasets: "
+              f"{', '.join(datasets)}")
+        return 2
+    print(f"Data root: {root}   out: {out_root}   datasets: {', '.join(datasets)}")
 
     stages = select_stages(args)
     if not stages:
@@ -164,6 +190,9 @@ def main(argv=None):
     if env.get("PYTHONPATH"):
         pypath.append(env["PYTHONPATH"])
     env["PYTHONPATH"] = os.pathsep.join(pypath)
+    # thread the resolved cohort into every stage (they read these at import)
+    env.update(dataset_config.env_for(root=root, datasets=datasets,
+                                      degen_out=out_root))
 
     total = len(stages)
     for i, stage in enumerate(stages, 1):

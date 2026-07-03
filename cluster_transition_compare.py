@@ -41,20 +41,27 @@ from scipy.stats import spearmanr
 from cluster_transition_labels import (IDX_COL, WEEK_COL, build_transitions,
                                         is_variant, week_sort_key)
 
+import dataset_config
+
 CSV_NAME = "Cluster_detail_results.csv"
-DATA_ROOT = Path("data")
+# Active data root; env-driven so it defaults to ./data but a run can point at
+# another cohort (e.g. early_analysis/data). load()/plot_drift() read this global,
+# so a --data-root run calls set_data_root() before loading anything.
+DATA_ROOT = dataset_config.data_root()
 
 
-def discover_datasets(data_root=DATA_ROOT):
-    """Every dataset dir under data/ holding a Cluster_detail_results.csv, sorted.
+def set_data_root(root):
+    """Point the module (and everything importing `load`) at another data root."""
+    global DATA_ROOT
+    DATA_ROOT = Path(root)
 
-    Auto-discovered so a new data/<mouse>/ (e.g. 1mp_open) is included by default
-    without editing this list. Pass --datasets to override.
-    """
-    root = Path(data_root)
-    if not root.is_dir():
-        return []
-    return sorted(d.name for d in root.iterdir() if (d / CSV_NAME).is_file())
+
+def discover_datasets(data_root=None, glob=None, datasets=None):
+    """Dataset dirs holding a Cluster_detail_results.csv, sorted. Honours
+    --datasets / --dataset-glob; auto-discovers otherwise."""
+    return dataset_config.discover_datasets(
+        data_root if data_root is not None else DATA_ROOT,
+        glob=glob, datasets=datasets)
 
 
 DEFAULT_DATASETS = discover_datasets()
@@ -325,8 +332,7 @@ def plot_drift(name, top, out_path):
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--datasets", nargs="+", default=DEFAULT_DATASETS,
-                    help="dataset folder names under data/ (default: all five)")
+    dataset_config.add_dataset_args(ap)
     ap.add_argument("--top", type=int, default=6,
                     help="how many drifting source clusters to show per dataset")
     ap.add_argument("--change-top", type=int, default=5,
@@ -334,9 +340,17 @@ def main():
                          "for the combined change plots")
     ap.add_argument("--model", choices=["linear", "cubic", "spline"],
                     default="linear", help="regression model for the change plots")
-    ap.add_argument("--out-dir", type=Path, default=DATA_ROOT,
-                    help="where to write the combined figures")
+    ap.add_argument("--out-dir", type=Path, default=None,
+                    help="where to write the combined figures (default: data root)")
     args = ap.parse_args()
+
+    root, datasets = dataset_config.resolve_datasets(args)
+    if not datasets:
+        raise SystemExit(f"no datasets found under {root}")
+    set_data_root(root)                       # so load()/plot_drift() use it
+    args.datasets = datasets
+    args.out_dir = args.out_dir or root
+    print(f"data root: {root}   datasets: {', '.join(datasets)}")
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
     p = plot_fanout(args.datasets, args.out_dir / "compare_fanout_by_week.png")

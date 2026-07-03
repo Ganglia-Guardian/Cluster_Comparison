@@ -109,7 +109,6 @@ def category_plots(mouse, wk, tba, cidx):
         plot(mouse, wk[sel], tba[sel], f"{folder}/{name}.png",
              subtitle=f"{name} clusters, {int(sel.sum())} windows")
 
-
 def main():
     for m in MICE:
         if not os.path.exists(f"{DATA}/{m}/session_1_out.mat"):
@@ -125,4 +124,9 @@ def main():
 
 
 if __name__ == "__main__":
+    # Temp until argparser added vvv
+    #DATA = "./early_analysis/data"
+    #OUT = "./early_analysis/tba_analysis"
+    #MICE = ["1lc", "2lc", "1mp", "2mp"]
+    # Add argparser ^^^
     main()

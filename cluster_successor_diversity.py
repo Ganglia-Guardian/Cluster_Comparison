@@ -57,9 +57,10 @@ from matplotlib.lines import Line2D
 from scipy.special import gammaln
 from scipy.stats import gaussian_kde, kurtosis, skew, spearmanr
 
+import dataset_config
 from cluster_transition_compare import (DATA_ROOT, DEFAULT_DATASETS,
                                         MIN_FRAME_FRAC, cohort, load,
-                                        progression_frames)
+                                        progression_frames, set_data_root)
 from cluster_transition_labels import build_transitions, is_variant, week_sort_key
 
 DEPTH = 20    # rarefaction depth: each cluster subsampled to this many transitions
@@ -234,8 +235,19 @@ def plot_summary(per_dataset, depth, out_path):
         return out_path
     weeks_all = sorted({int(w) for _, res, _ in ordered for w in res["wn"].unique()})
     wmax = weeks_all[-1]
-    sal_x, ldopa_x = wmax + 1, wmax + 2
-    arm_x = {"saline": (sal_x, "^"), "ldopa": (ldopa_x, "D")}
+
+    # Only draw a challenge column/marker/legend for an arm that some dataset
+    # actually has (cohorts without a wk24 saline/l-dopa challenge, e.g. weeks
+    # 8-13, get a plain progression plot with no challenge apparatus).
+    ARM_ORDER = [("saline", "^", "saline"), ("ldopa", "D", "l-dopa")]
+
+    def _arm_present(arm):
+        return any(variants and variants.get(arm) is not None and len(variants[arm])
+                   for _, _, variants in ordered)
+
+    present_arms = [a for a in ARM_ORDER if _arm_present(a[0])]
+    arm_x = {arm: (wmax + 1 + j, mk)
+             for j, (arm, mk, _lab) in enumerate(present_arms)}
 
     fig, ax = plt.subplots(figsize=(9.5, 6))
     for i, (name, res, variants) in enumerate(ordered):
@@ -264,31 +276,41 @@ def plot_summary(per_dataset, depth, out_path):
                 ax.errorbar([xpos], [m], yerr=yerr, fmt=mk, color=color, ms=8,
                             capsize=3, elinewidth=1, mec="black", mew=0.4, zorder=5)
 
-    ax.axvline(wmax + 0.5, ls=":", color="0.6", lw=1)     # progression | challenge divider
+    arm_ticks = [arm_x[arm][0] for arm, _, _ in present_arms]
+    if present_arms:
+        ax.axvline(wmax + 0.5, ls=":", color="0.6", lw=1)   # progression | challenge divider
     prog_ticks = list(range(weeks_all[0], wmax + 1, 2))
-    ticks = prog_ticks + [sal_x, ldopa_x]
+    ticks = prog_ticks + arm_ticks
     ax.set_xticks(ticks)
-    labels = ax.set_xticklabels([str(t) for t in prog_ticks] + ["saline", "l-dopa"])
+    labels = ax.set_xticklabels([str(t) for t in prog_ticks]
+                                + [lab for _, _, lab in present_arms])
     for lab, t in zip(labels, ticks):
-        if t in (sal_x, ldopa_x):
+        if t in arm_ticks:
             lab.set_rotation(45); lab.set_ha("right")
             lab.set_style("italic"); lab.set_fontsize(8)
 
-    ax.set_xlabel("disease week   →   wk24 challenge")
+    ax.set_xlabel("disease week   →   wk24 challenge" if present_arms
+                  else "disease week")
     ax.set_ylabel("median rarefied successor richness")
     ax.set_title(f"Median rarefied successor richness over disease "
                  f"(rarefied to {depth}; shaded = bootstrap 95% CI)\n"
                  f"dashed = control (lc), solid = MitoPark (mp)")
     ax.grid(alpha=0.3)
     leg1 = ax.legend(fontsize=8, loc="upper left", bbox_to_anchor=(1.02, 1),
-                     title="dataset:  Spearman rho (weeks 8-24)")
+                     title=f"dataset:  Spearman rho (weeks {weeks_all[0]}-{wmax})")
     ax.add_artist(leg1)
-    shape_handles = [
-        Line2D([0], [0], marker="^", color="0.4", ls="none", mec="black", mew=0.4, label="saline arm"),
-        Line2D([0], [0], marker="D", color="0.4", ls="none", mec="black", mew=0.4, label="L-DOPA arm"),
-    ]
-    ax.legend(handles=shape_handles, fontsize=8, loc="lower left", title="wk24 challenge")
-    fig.savefig(out_path, dpi=150, bbox_inches="tight", bbox_extra_artists=[leg1])
+    extra = [leg1]
+    if present_arms:
+        arm_label = {"saline": "saline arm", "ldopa": "L-DOPA arm"}
+        shape_handles = [
+            Line2D([0], [0], marker=mk, color="0.4", ls="none", mec="black",
+                   mew=0.4, label=arm_label[arm])
+            for arm, mk, _lab in present_arms
+        ]
+        leg2 = ax.legend(handles=shape_handles, fontsize=8, loc="lower left",
+                         title="wk24 challenge")
+        ax.add_artist(leg2)
+    fig.savefig(out_path, dpi=150, bbox_inches="tight", bbox_extra_artists=extra)
     plt.close(fig)
     return out_path
 
@@ -296,7 +318,7 @@ def plot_summary(per_dataset, depth, out_path):
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--datasets", nargs="+", default=DEFAULT_DATASETS)
+    dataset_config.add_dataset_args(ap)
     ap.add_argument("--arena", choices=["both", "open", "3d"], default="both",
                     help="which arena to include: open (*_open datasets), 3d "
                          "(high-tier, everything else), or both (default)")
@@ -304,14 +326,21 @@ def main():
                     help="rarefaction depth (out-transitions per cluster)")
     ap.add_argument("--reps", type=int, default=REPS,
                     help="subsample draws averaged per cluster")
-    ap.add_argument("--out-dir", type=Path, default=DATA_ROOT)
+    ap.add_argument("--out-dir", type=Path, default=None,
+                    help="where to write the combined figure (default: data root)")
     args = ap.parse_args()
+
+    root, all_datasets = dataset_config.resolve_datasets(args)
+    if not all_datasets:
+        raise SystemExit(f"no datasets found under {root}")
+    set_data_root(root)                       # so the imported load() uses it
+    out_dir = args.out_dir or root
 
     is_open = {"open": lambda n: n.endswith("_open"),
                "3d": lambda n: not n.endswith("_open"),
                "both": lambda n: True}[args.arena]
-    datasets = [d for d in args.datasets if is_open(d)]
-    print(f"arena={args.arena}: {datasets}")
+    datasets = [d for d in all_datasets if is_open(d)]
+    print(f"data root: {root}   arena={args.arena}: {datasets}")
 
     per_dataset = []
     for name in datasets:
@@ -320,7 +349,7 @@ def main():
         if res.empty:
             print(f"{name}: no clusters with >= {args.depth} transitions; skipped")
             continue
-        ds_dir = DATA_ROOT / name
+        ds_dir = root / name
         res.to_csv(ds_dir / "successor_diversity.csv", index=False)
         print(f"{name}: kept {frac*100:.0f}% of clusters at depth {args.depth}; "
               f"wrote {ds_dir / 'successor_diversity.csv'}")
@@ -335,7 +364,7 @@ def main():
     if per_dataset:
         suffix = "" if args.arena == "both" else f"_{args.arena}"
         p = plot_summary(per_dataset, args.depth,
-                         args.out_dir / f"successor_diversity_over_time{suffix}.png")
+                         out_dir / f"successor_diversity_over_time{suffix}.png")
         print(f"Wrote {p}")
 
 

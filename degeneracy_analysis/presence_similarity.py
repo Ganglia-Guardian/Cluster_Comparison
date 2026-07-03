@@ -32,32 +32,36 @@ Run from repo root:
 """
 import os
 import re
+import sys
 import numpy as np
 import pandas as pd
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-DATA = "data"
+# repo root on the path so the shared config imports whether this stage is run
+# via the pipeline runner (which sets PYTHONPATH) or directly from repo root.
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.parent))
+import dataset_config
+
+# Data root + degeneracy out dir are env-driven (CLUSTER_DATA_ROOT /
+# CLUSTER_DEGEN_OUT), so the pipeline runner can point every stage at another
+# cohort (e.g. early_analysis/data) at once; defaults reproduce the old paths.
+DATA = str(dataset_config.data_root())
+OUT = dataset_config.degen_out_root(DATA)
 
 
-def discover_mice(data_dir=DATA):
-    """Every mouse under data/ with a Cluster_detail_results.csv, sorted.
+def discover_mice(data_dir=None):
+    """Mouse folders under the data root with a Cluster_detail_results.csv, sorted.
 
-    Auto-discovered so dropping in a new data/<mouse>/ folder (e.g. 1mp_open)
-    is picked up with no code change. Run from the repo root (the pipeline
-    runner sets that as the working directory).
+    Honours CLUSTER_DATASETS / CLUSTER_DATASET_GLOB so a run can be narrowed to
+    specific folders or to the <n>lc / <n>mp cohorts. Auto-discovers otherwise,
+    so dropping in a new <root>/<mouse>/ folder is picked up with no code change.
     """
-    if not os.path.isdir(data_dir):
-        return []
-    return sorted(
-        name for name in os.listdir(data_dir)
-        if os.path.isfile(os.path.join(data_dir, name, "Cluster_detail_results.csv"))
-    )
+    return dataset_config.discover_datasets(data_dir if data_dir is not None else DATA)
 
 
 MICE = discover_mice()
-OUT = "degeneracy_analysis/out"
 
 MIN_COUNT = 200          # drop clusters with fewer total obs over natural weeks
 MIN_WEEK_FRAC = 0.1      # drop weeks with < this fraction of the median week's obs

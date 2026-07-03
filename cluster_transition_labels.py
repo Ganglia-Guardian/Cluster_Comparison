@@ -66,6 +66,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+import dataset_config
+
 # --- column names in the input CSV ------------------------------------------
 IDX_COL = "ClusterIdx"
 WEEK_COL = "Folder_Name"
@@ -398,28 +400,17 @@ def make_plots(trans, pairs, progression_weeks, out_dir, per_cat=15):
     return written
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--csv", type=Path, default=DEFAULT_CSV,
-                    help="path to Cluster_detail_results.csv")
-    ap.add_argument("--out-dir", type=Path, default=None,
-                    help="where to write outputs (default: alongside the CSV)")
-    ap.add_argument("--min-count", type=int, default=1,
-                    help="drop ordered pairs seen fewer than this many times total")
-    ap.add_argument("--include-self", action="store_true",
-                    help="keep self-loops (a -> a)")
-    ap.add_argument("--no-plots", action="store_true",
-                    help="skip writing the time-course figures")
-    args = ap.parse_args()
-
-    out_dir = args.out_dir or args.csv.parent
+def process(csv, out_dir, min_count, include_self, no_plots):
+    """Run the transition-label analysis for one dataset CSV, writing to out_dir
+    (defaults to the CSV's own folder)."""
+    csv = Path(csv)
+    out_dir = Path(out_dir) if out_dir else csv.parent
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    df = pd.read_csv(args.csv)
+    df = pd.read_csv(csv)
     df = df.reset_index(drop=True)
 
-    trans = build_transitions(df, include_self=args.include_self)
+    trans = build_transitions(df, include_self=include_self)
 
     # ordered week timelines
     all_weeks = sorted(df[WEEK_COL].dropna().unique(), key=week_sort_key)
@@ -427,12 +418,12 @@ def main():
     treatment_weeks = [w for w in all_weeks if is_variant(w)]
 
     print(f"Loaded {len(df):,} frames; {len(trans):,} ordered transitions "
-          f"({'incl.' if args.include_self else 'excl.'} self-loops).")
+          f"({'incl.' if include_self else 'excl.'} self-loops).")
     print(f"Progression weeks ({len(progression_weeks)}): {progression_weeks}")
     if treatment_weeks:
         print(f"Treatment arms (reported, not in timeline): {treatment_weeks}")
 
-    pairs = summarize_pairs(trans, progression_weeks, args.min_count)
+    pairs = summarize_pairs(trans, progression_weeks, min_count)
     drift = source_drift(trans, progression_weeks)
 
     by_week = (trans.groupby(["week", "source", "target"]).size()
@@ -449,7 +440,7 @@ def main():
 
     # ----- console summary -----
     print(f"\n{len(pairs):,} distinct ordered transitions "
-          f"(min-count {args.min_count}).")
+          f"(min-count {min_count}).")
     n_one_way = int(pairs["is_one_way"].sum())
     print(f"One-way transitions (reverse never seen): {n_one_way:,} "
           f"({100 * n_one_way / max(1, len(pairs)):.0f}%).")
@@ -476,9 +467,46 @@ def main():
 
     print(f"\nWrote:\n  {p_pairs}\n  {p_week}\n  {p_drift}")
 
-    if not args.no_plots:
+    if not no_plots:
         for p in make_plots(trans, pairs, progression_weeks, out_dir):
             print(f"  {p}")
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--csv", type=Path, default=None,
+                    help=f"single Cluster_detail_results.csv (default: {DEFAULT_CSV}); "
+                         "ignored when --data-root/--datasets/--dataset-glob select a cohort")
+    dataset_config.add_dataset_args(ap)
+    ap.add_argument("--out-dir", type=Path, default=None,
+                    help="where to write outputs (default: alongside each CSV; in "
+                         "cohort mode a given --out-dir gets one <dataset>/ subdir each)")
+    ap.add_argument("--min-count", type=int, default=1,
+                    help="drop ordered pairs seen fewer than this many times total")
+    ap.add_argument("--include-self", action="store_true",
+                    help="keep self-loops (a -> a)")
+    ap.add_argument("--no-plots", action="store_true",
+                    help="skip writing the time-course figures")
+    args = ap.parse_args()
+
+    # Cohort mode: loop over every selected dataset under the data root. Single
+    # mode: one --csv (back-compat; default data/1lc/...).
+    cohort = args.data_root or args.datasets or args.dataset_glob
+    if cohort:
+        root, datasets = dataset_config.resolve_datasets(args)
+        if not datasets:
+            raise SystemExit(f"no datasets found under {root}")
+        print(f"data root: {root}   datasets: {', '.join(datasets)}\n")
+        for name in datasets:
+            print(f"{'='*70}\n{name}\n{'='*70}")
+            out_dir = (args.out_dir / name) if args.out_dir else None
+            process(root / name / dataset_config.CSV_NAME, out_dir,
+                    args.min_count, args.include_self, args.no_plots)
+            print()
+    else:
+        process(args.csv or DEFAULT_CSV, args.out_dir,
+                args.min_count, args.include_self, args.no_plots)
 
 
 if __name__ == "__main__":
