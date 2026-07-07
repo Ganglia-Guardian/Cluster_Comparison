@@ -4,3 +4,4 @@
 - [Arena exclusivity analysis](arena-exclusivity-analysis.md) — how 2D/3D/shared cluster verdicts are computed (MATLAB-only) and the first result
 - [Arena TBA features](arena-tba-features.md) — extracting per-bin total body acceleration from session_1_out.mat and merging it to arena frames
 - [Arena transitions](arena-transitions.md) — Fork 2: successor-contraction by arena (strong) and the null TBA-flow result
+- [Cluster-group dendrogram](cluster-group-dendrogram.md) — cluster_group_analysis: per-(mouse,batch) kinematic dendrograms, then arena purity / TBA / week per merged branch
