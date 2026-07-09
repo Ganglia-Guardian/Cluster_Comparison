@@ -159,6 +159,26 @@ def group_reclassify(labels, groups, counts_k, weeks, margin=MARGIN):
     return final, changed, strong
 
 
+def _save_detail_csv(mouse, clusters, labels, TBA):
+    """Re-emit this mouse's Cluster_detail_results.csv (one row per observation)
+    with three per-cluster columns joined on ClusterIdx:
+        temporal_class  individual temporal label (early/mid/late/sustained/uncategorized)
+        tba             cluster mean total body acceleration
+        tba_class       'low' if tba <= RESTING_TBA else 'high'
+    Clusters dropped below MIN_COUNT (absent from the kept set) are left blank."""
+    det = pd.read_csv(f"{DATA}/{mouse}/Cluster_detail_results.csv")
+    tclass = dict(zip(clusters.tolist(), labels))
+    tba_map = dict(zip(clusters.tolist(), TBA))
+    tba_class = dict(zip(clusters.tolist(),
+                         np.where(TBA <= RESTING_TBA, "low", "high")))
+    det["temporal_class"] = det.ClusterIdx.map(tclass)
+    det["tba"] = det.ClusterIdx.map(tba_map)
+    det["tba_class"] = det.ClusterIdx.map(tba_class)
+    path = f"{OUT}/{mouse}/Cluster_detail_results_temporal.csv"
+    det.to_csv(path, index=False)
+    return path
+
+
 def _rest_strip(axr, code, ro):
     axr.imshow(code[ro][:, None], aspect="auto", vmin=-0.5, vmax=3.5,
                cmap=ListedColormap(MOVE_COLORS))
@@ -319,6 +339,10 @@ def analyze(mouse):
         **{f"cos_{c}": S[:, i] for i, c in enumerate(CATS)},
     })
     df.to_csv(f"{OUT}/{mouse}/temporal_classes.csv", index=False)
+
+    # per-observation detail CSV mirroring Cluster_detail_results.csv, with the
+    # cluster's temporal label + TBA + TBA class joined on ClusterIdx.
+    _save_detail_csv(mouse, clusters, labels, func["TBA"])
 
     # evolution candidates: clusters whose class changes once pooled with its
     # feature-family. Group context is included to hunt for commonalities.
