@@ -33,7 +33,7 @@ from pathlib import Path
 CSV_NAME = "Cluster_detail_results.csv"
 DEFAULT_DATA_ROOT = "data"
 LEGACY_DEGEN_OUT = "degeneracy_analysis/out"   # kept for the default ./data cohort
-MOUSE_GLOB = ("*lc", "*mp")                    # convenience preset for --dataset-glob
+MOUSE_GLOB = ("*lc", "*m(ito)?p")                    # convenience preset for --dataset-glob
 
 # env var names (also the wire format the degeneracy runner uses per subprocess)
 ENV_DATA_ROOT = "CLUSTER_DATA_ROOT"
