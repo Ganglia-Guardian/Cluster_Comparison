@@ -11,16 +11,16 @@ For a mouse folder holding one ``Cluster_detail_results.csv`` and the per-week
   1. Per week, subsets the detail CSV to that week's rows (by Folder_Name),
      NaN-cleans the week's centroid file, and runs ``cluster_spatial_map.py``
      into its own output folder:
-         output/<mouse>/density_maps/<week>/cluster_density_map.png  (+ siblings)
+         output/<mouse>/density_maps/<week>/cluster_density_map.jpeg  (+ siblings)
   2. Stitches every week's density map, in chronological order, into an animated
      GIF at --fps frames/sec with the week label drawn in the top-right corner
      (kept alongside the summaries, not the per-week maps):
          output/<mouse>/summary_plots/weekly_density.gif
   3. Writes position-occupancy summaries from the (cleaned) centroid tracks:
-         output/<mouse>/summary_plots/radius_distribution.png
-         output/<mouse>/summary_plots/radial_entropy_by_week.png
-         output/<mouse>/summary_plots/coordinate_entropy_by_week.png
-         output/<mouse>/summary_plots/bins_visited_by_week.png
+         output/<mouse>/summary_plots/radius_distribution.jpeg
+         output/<mouse>/summary_plots/radial_entropy_by_week.jpeg
+         output/<mouse>/summary_plots/coordinate_entropy_by_week.jpeg
+         output/<mouse>/summary_plots/bins_visited_by_week.jpeg
          output/<mouse>/summary_plots/entropy_by_week.csv
 
 Radius is measured to a fixed arena center (default 700, 600; --center to change).
@@ -66,6 +66,9 @@ from scipy.stats import gaussian_kde, spearmanr
 from PIL import Image, ImageDraw, ImageFont
 
 _HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(_HERE.parent))
+from utils import save_figure  # noqa: E402
+
 _SPATIAL_MAP = _HERE / "cluster_spatial_map.py"
 
 # Fixed arena extent (px), matching cluster_spatial_map.py's ARENA_W/ARENA_H, so the
@@ -77,7 +80,7 @@ _FONT_PATH = (
 )
 
 # The density map file cluster_spatial_map.py writes on a data-derived background.
-_DENSITY_MAP = "cluster_density_map.png"
+_DENSITY_MAP = "cluster_density_map.jpeg"
 
 
 # ----------------------------------------------------------------------------------
@@ -237,7 +240,7 @@ def _load_font(size: int) -> ImageFont.FreeTypeFont:
 
 
 def build_gif(frames: list[tuple[str, Path]], out_gif: Path, fps: float) -> None:
-    """frames: (label, png_path) in play order. Pads to a shared size, draws the
+    """frames: (label, jpeg_path) in play order. Pads to a shared size, draws the
     label top-right, saves an animated GIF at *fps* frames/sec."""
     if not frames:
         print("  ! no density maps to animate.", file=sys.stderr)
@@ -323,7 +326,7 @@ def radius_ridgeline(have: list[dict], center: tuple[float, float], out_path: Pa
     ax.set_title(f"{mouse} ({grp}): radial-distance distribution by week\n"
                  f"weekly-median trend rho={rho:+.2f}, p={p:.3f}")
     fig.tight_layout()
-    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    save_figure(fig, out_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
     return float(rho), float(p)
 
@@ -348,7 +351,7 @@ def make_summaries(weeks: list[dict], center: tuple[float, float], outdir: Path,
     y_edges = np.linspace(all_y.min(), all_y.max(), coord_bins + 1)
 
     # ---- 1) radius-to-center distribution: per-week ridgeline (earliest at top) ----
-    radius_ridgeline(have, center, outdir / "radius_distribution.png", mouse)
+    radius_ridgeline(have, center, outdir / "radius_distribution.jpeg", mouse)
 
     # ---- 2 & 3) per-week entropy on the shared bins ----
     rows = []
@@ -380,21 +383,20 @@ def make_summaries(weeks: list[dict], center: tuple[float, float], outdir: Path,
         ax.set_xlabel("week")
         ax.set_ylabel(ylabel)
         ax.set_title(f"{title}\nweekly trend rho={rho:+.2f}, p={p:.3f}")
-        ax.grid(axis="y", alpha=0.3)
         fig.tight_layout()
-        fig.savefig(outdir / fname, dpi=150)
+        save_figure(fig, outdir / fname, dpi=150)
         plt.close(fig)
 
     _bar([r["radial_entropy_bits"] for r in rows],
          f"Radial-distance occupancy entropy ({radial_bins} bins)",
-         "entropy [bits]", "radial_entropy_by_week.png", "#4C72B0")
+         "entropy [bits]", "radial_entropy_by_week.jpeg", "#4C72B0")
     _bar([r["coord_entropy_bits"] for r in rows],
          f"Coordinate occupancy entropy ({coord_bins}x{coord_bins} grid)",
-         "entropy [bits]", "coordinate_entropy_by_week.png", "#55A868")
+         "entropy [bits]", "coordinate_entropy_by_week.jpeg", "#55A868")
     _bar([r["bins_visited"] for r in rows],
          f"Distinct grid cells visited ({coord_bins}x{coord_bins} grid, "
          f"{coord_bins * coord_bins} total)",
-         "bins visited", "bins_visited_by_week.png", "#C44E52")
+         "bins visited", "bins_visited_by_week.jpeg", "#C44E52")
 
     with open(outdir / "entropy_by_week.csv", "w", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=list(rows[0].keys()))
@@ -467,7 +469,7 @@ def main() -> None:
     for w in weeks:
         week_out = maps_dir / w["label"]
         clean_path = week_out / f"{w['label']}_centroid_clean.csv"
-        density_png = week_out / _DENSITY_MAP
+        density_map = week_out / _DENSITY_MAP
 
         # NaN-clean once (also feeds the summaries); reuse if present under --skip-maps
         if clean_path.exists() and (args.skip_maps or not args.force_maps):
@@ -480,7 +482,7 @@ def main() -> None:
         w["x"], w["y"] = x, y
 
         if not args.skip_maps:
-            if density_png.exists() and not args.force_maps:
+            if density_map.exists() and not args.force_maps:
                 print(f"[{w['label']}] density map exists; reuse "
                       f"(use --force-maps to rebuild)")
             else:
@@ -493,8 +495,8 @@ def main() -> None:
                 if not ok:
                     print(f"  ! {w['label']}: no density map produced; skipping frame",
                           file=sys.stderr)
-        if density_png.exists():
-            frames.append((w["label"], density_png))
+        if density_map.exists():
+            frames.append((w["label"], density_map))
 
     if not args.skip_maps:
         print("\nBuilding animation ...")

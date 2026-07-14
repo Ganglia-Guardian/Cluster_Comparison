@@ -38,6 +38,7 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT.parent))
 from cluster_transition_compare import fanout_by_week           # noqa: E402
 from cluster_successor_diversity import rarefied_diversity      # noqa: E402
+from utils import save_figure                                   # noqa: E402
 
 from cluster_arena_exclusivity import (BATCHES, MICE, mat_csv,  # noqa: E402
                                        parse_segment)
@@ -155,7 +156,7 @@ def main():
             tag = "all-bins-by-arena" if args.membership == "all" \
                 else f"split={args.split}, arena-mode={args.arena_mode}"
             plot_dataset(fan_sub, rich_sub, labels, f"{mouse} {batch}  ({tag})",
-                         out_dir / f"{mouse}_{batch}_clustertype_transitions.png")
+                         out_dir / f"{mouse}_{batch}_clustertype_transitions.jpeg")
             print(f"  {mouse}/{batch}: "
                   + ", ".join(f"{labels[s]}={len(members[s])}cl" for s in SUBSETS))
 
@@ -183,9 +184,9 @@ def plot_dataset(fan_sub, rich_sub, labels, title, path):
     axes[1].set(xlabel="disease week", ylabel="median rarefied richness",
                 title="Successor richness by week (rarefied)")
     for ax in axes:
-        ax.grid(alpha=0.3); ax.legend(title="cluster subset")
+        ax.legend(title="cluster subset")
     fig.suptitle(title, y=1.0)
-    fig.tight_layout(); fig.savefig(path, dpi=140, bbox_inches="tight"); plt.close(fig)
+    fig.tight_layout(); save_figure(fig, path, dpi=140, bbox_inches="tight"); plt.close(fig)
 
 
 if __name__ == "__main__":

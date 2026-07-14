@@ -65,6 +65,7 @@ from scipy.spatial.distance import jensenshannon
 from scipy.stats import spearmanr
 
 from cluster_sim_by_week import week_bin_ranges, week_sort_key
+from utils import save_figure
 
 DATA_ROOT = Path("data")
 IDX_KEY = "Clusters/idx"
@@ -210,7 +211,7 @@ def plot_rarefaction(rares, out_dir, ds_name, k):
 
     for ax in axes:
         ax.axvline(0.5, color="grey", ls="--", lw=0.8)
-        ax.set_xlim(0, 1); ax.grid(alpha=0.3)
+        ax.set_xlim(0, 1)
         ax.set_xlabel("fraction of recording")
     axes[0].set_ylim(0, 1.02)
     axes[0].set_ylabel("fraction of repertoire seen")
@@ -226,7 +227,7 @@ def plot_rarefaction(rares, out_dir, ds_name, k):
 
     fig.suptitle(f"{ds_name}: cluster discovery over time (rarefaction), "
                  f"K={k} clusters", fontsize=13)
-    fig.savefig(out_dir / "rarefaction_by_week.png", dpi=150, bbox_inches="tight")
+    save_figure(fig, out_dir / "rarefaction_by_week.jpeg", dpi=150, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -246,7 +247,7 @@ def plot_dataset(df, rares, bout, k, out_dir):
     ax.set_ylim(0, 1.02); ax.set_ylabel("split-half agreement")
     ax.set_title(f"Split-half occupancy agreement by week (block={DEFAULT_BLOCK} bins)")
     ax.set_xticks(x); ax.set_xticklabels(weeks, rotation=45, ha="right", fontsize=8)
-    ax.legend(fontsize=8); ax.grid(alpha=0.3)
+    ax.legend(fontsize=8)
 
     # 2) rarefaction curves (one faint line per week)
     ax = axes[0, 1]
@@ -255,7 +256,7 @@ def plot_dataset(df, rares, bout, k, out_dir):
     ax.axvline(0.5, color="grey", ls="--", lw=0.8)
     ax.set_xlabel("fraction of recording"); ax.set_ylabel("fraction of repertoire seen")
     ax.set_title("Rarefaction per week (plateau = saturated)")
-    ax.set_ylim(0, 1.02); ax.grid(alpha=0.3)
+    ax.set_ylim(0, 1.02)
 
     # 3) block-size sensitivity (mean cosine over weeks +/- spread)
     ax = axes[1, 0]
@@ -267,7 +268,7 @@ def plot_dataset(df, rares, bout, k, out_dir):
     ax.set_xscale("log"); ax.set_xlabel("block size (bins, log)")
     ax.set_ylabel("mean split-half cosine"); ax.set_ylim(0, 1.02)
     ax.set_title("Agreement vs block size (small = autocorr-inflated)")
-    ax.legend(fontsize=8); ax.grid(alpha=0.3)
+    ax.legend(fontsize=8)
 
     # 4) saturation index + late discovery across weeks
     ax = axes[1, 0].twinx() if False else axes[1, 1]
@@ -283,7 +284,7 @@ def plot_dataset(df, rares, bout, k, out_dir):
     fig.suptitle(f"{out_dir.parent.name}: split-half occupancy diagnostic "
                  f"(K={k} clusters, bout median={bout['median']} bins)", fontsize=13)
     fig.tight_layout(rect=(0, 0, 1, 0.97))
-    fig.savefig(out_dir / "split_half_occupancy.png", dpi=150)
+    save_figure(fig, out_dir / "split_half_occupancy.jpeg", dpi=150)
     plt.close(fig)
 
 
@@ -342,11 +343,11 @@ def main():
         ax.axvline(0.5, color="grey", ls="--", lw=0.8)
         ax.set_xlabel("fraction of recording"); ax.set_ylabel("fraction of repertoire seen")
         ax.set_title("Mean rarefaction per dataset"); ax.set_ylim(0, 1.02)
-        ax.legend(title="dataset"); ax.grid(alpha=0.3)
-        fig.tight_layout(); fig.savefig(args.data_root / "rarefaction_overlay.png", dpi=150)
+        ax.legend(title="dataset")
+        fig.tight_layout(); save_figure(fig, args.data_root / "rarefaction_overlay.jpeg", dpi=150)
         plt.close(fig)
         print(f"\nWrote {args.data_root / 'split_half_summary.csv'} and "
-              f"{args.data_root / 'rarefaction_overlay.png'}")
+              f"{args.data_root / 'rarefaction_overlay.jpeg'}")
 
 
 if __name__ == "__main__":

@@ -27,6 +27,7 @@ from scipy.stats import spearmanr
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from feature_extraction import load_funct_features, bin_features, FEATURE_NAMES
+from utils import save_figure
 from presence_similarity import MICE, DATA, OUT
 from feature_similarity import _row_labels
 
@@ -99,7 +100,7 @@ def analyze(mouse):
                  f"(stress={s1:.2f})")
     ax.set_xticks(weeks[::2])
     fig.tight_layout()
-    fig.savefig(f"{OUT}/{mouse}/feature_time_map.png", dpi=130)
+    save_figure(fig, f"{OUT}/{mouse}/feature_time_map.jpeg", dpi=130)
     plt.close(fig)
     print(f"{mouse:5s} ({grp:8s}): corr(feat,week)={rho:.2f}  corr(feat,TBA)={rho_tba:+.2f}  "
           f"stress1D={s1:.2f}  ({len(clusters)} clusters)")

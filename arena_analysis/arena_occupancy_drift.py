@@ -26,6 +26,7 @@ Run:
     uv run python arena_analysis/arena_occupancy_drift.py
 """
 import argparse
+import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -34,10 +35,13 @@ import pandas as pd
 from scipy.spatial.distance import jensenshannon
 from scipy.stats import spearmanr, wilcoxon
 
-from cluster_arena_exclusivity import (BATCHES, MICE, OUT as EXCL_OUT,
+ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(ROOT.parent))
+from utils import save_figure                                             # noqa: E402
+
+from cluster_arena_exclusivity import (BATCHES, MICE, OUT as EXCL_OUT,  # noqa: E402
                                        load_mat_frames)
 
-ROOT = Path(__file__).resolve().parent
 OUT = ROOT / "output" / "occupancy_drift"
 ARENAS = ["2D", "3D"]
 ARENA_COLOR = {"2D": "#d62728", "3D": "#1f77b4"}
@@ -108,10 +112,10 @@ def plot_collective(coll_by_arena, title, path):
     axes[1].set(xlabel="week", ylabel="JS drift from early baseline",
                 title="Repertoire drift by week")
     for ax in axes:
-        ax.grid(alpha=0.3); ax.legend(title="arena")
+        ax.legend(title="arena")
     fig.suptitle(title)
     fig.tight_layout()
-    fig.savefig(path, dpi=140)
+    save_figure(fig, path, dpi=140)
     plt.close(fig)
 
 
@@ -128,7 +132,7 @@ def plot_arena_scatter(merged, title, path):
            title=title)
     ax.set_aspect("equal")
     fig.tight_layout()
-    fig.savefig(path, dpi=140)
+    save_figure(fig, path, dpi=140)
     plt.close(fig)
 
 
@@ -183,9 +187,9 @@ def main():
                              "wilcoxon_p": pval})
 
             plot_collective(coll_by_arena, f"{mouse} {batch}",
-                            OUT / f"{mouse}_{batch}_collective.png")
+                            OUT / f"{mouse}_{batch}_collective.jpeg")
             plot_arena_scatter(merged, f"{mouse} {batch}: occupancy trend by arena",
-                               OUT / f"{mouse}_{batch}_trend_scatter.png")
+                               OUT / f"{mouse}_{batch}_trend_scatter.jpeg")
             print(f"  {mouse}/{batch}: {len(clusters)} clusters, {len(weeks)} weeks")
 
     pd.concat(long_rows, ignore_index=True).to_csv(OUT / "occupancy_long.csv", index=False)

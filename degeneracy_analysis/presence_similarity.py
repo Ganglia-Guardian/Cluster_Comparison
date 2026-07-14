@@ -43,6 +43,7 @@ import matplotlib.pyplot as plt
 # via the pipeline runner (which sets PYTHONPATH) or directly from repo root.
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.parent))
 import dataset_config
+from utils import save_figure
 
 # Data root + degeneracy out dir are env-driven (CLUSTER_DATA_ROOT /
 # CLUSTER_DEGEN_OUT), so the pipeline runner can point every stage at another
@@ -219,7 +220,7 @@ def _sanity_plot(mouse, clusters, totals, W, logW, cen, weeks):
               xlabel="centroid week", ylabel="# clusters")
     ax[2].set_xticks(weeks[::2])
     fig.tight_layout()
-    fig.savefig(f"{OUT}/{mouse}/presence_sanity.png", dpi=110)
+    save_figure(fig, f"{OUT}/{mouse}/presence_sanity.jpeg", dpi=110)
     plt.close(fig)
 
 

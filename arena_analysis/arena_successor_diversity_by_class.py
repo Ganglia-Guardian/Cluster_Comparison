@@ -23,9 +23,9 @@ transition ever crosses arenas and the 2D vs 3D comparison stays clean.
 
 Outputs (arena_analysis/output/successor_diversity_by_class/<mouse>/):
     <arena>_<class>_successor_diversity.csv        week, source, richness, perplexity
-    <arena>_<class>_richness_ridgeline.png         per-week rarefied-richness distribution
-    <arena>_<class>_perplexity_ridgeline.png       per-week effective-successors distribution
-    <arena>_class_overlay_richness.png             all 5 classes' median richness vs week
+    <arena>_<class>_richness_ridgeline.jpeg        per-week rarefied-richness distribution
+    <arena>_<class>_perplexity_ridgeline.jpeg      per-week effective-successors distribution
+    <arena>_class_overlay_richness.jpeg            all 5 classes' median richness vs week
 And a top-level trend summary: class_arena_richness_trends.csv (Spearman per subset).
 
 Run:
@@ -49,6 +49,7 @@ from cluster_arena_exclusivity import parse_segment                        # noq
 from temporal_arena_frequency import discover, CATEGORIES                  # noqa: E402
 from cluster_successor_diversity import (rarefied_diversity, plot_ridgeline,  # noqa: E402
                                          boot_median_ci, DEPTH, REPS)
+from utils import save_figure                                             # noqa: E402
 
 OUT = ROOT / "output" / "successor_diversity_by_class"
 ARENAS = ["2D", "3D"]
@@ -122,11 +123,10 @@ def plot_overlay(mouse, arena, cat_res, depth, path):
     ax.set(xlabel="disease week", ylabel="median rarefied successor richness",
            title=f"{mouse} ({grp}) — {arena}: successor richness by temporal class\n"
                  f"(rarefied to {depth}; shaded = bootstrap 95% CI)")
-    ax.grid(alpha=0.3)
     if drew:
         ax.legend(fontsize=8, title="temporal class", loc="best")
     fig.tight_layout()
-    fig.savefig(path, dpi=150, bbox_inches="tight")
+    save_figure(fig, path, dpi=150, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -166,11 +166,11 @@ def main():
                     continue
                 res.to_csv(mdir / f"{arena}_{cat}_successor_diversity.csv", index=False)
                 plot_ridgeline(res, "richness", f"{mouse} {arena} · {cat}",
-                               args.depth, mdir / f"{arena}_{cat}_richness_ridgeline.png")
+                               args.depth, mdir / f"{arena}_{cat}_richness_ridgeline.jpeg")
                 plot_ridgeline(res, "perplexity", f"{mouse} {arena} · {cat}",
-                               args.depth, mdir / f"{arena}_{cat}_perplexity_ridgeline.png")
+                               args.depth, mdir / f"{arena}_{cat}_perplexity_ridgeline.jpeg")
             plot_overlay(mouse, arena, cat_res, args.depth,
-                         mdir / f"{arena}_class_overlay_richness.png")
+                         mdir / f"{arena}_class_overlay_richness.jpeg")
             filled = [c for c in CATEGORIES if not cat_res[c].empty]
             print(f"  {mouse}/{arena}: subsets with data -> {filled}")
 

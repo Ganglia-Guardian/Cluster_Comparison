@@ -12,17 +12,23 @@ mean TBA, then characterize it:
 
 Outputs (output/lc_low_tba/):
     low_vigour_clusters.csv   the member clusters (mouse, batch, cluster, ...)
-    lc_low_tba.png            2 rows (1lc, 2lc) x 3 panels: occ3d-vs-TBA scatter,
+    lc_low_tba.jpeg           2 rows (1lc, 2lc) x 3 panels: occ3d-vs-TBA scatter,
                               feature contrast, week trajectory
 
 Run:  uv run python cluster_group_analysis/lc_low_tba_analysis.py
 """
+import sys
+from pathlib import Path
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
 from common import ROOT
 from feature_extraction import FEATURE_NAMES
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # repo root
+from utils import save_figure  # noqa: E402
 
 OUT = ROOT / "output" / "lc_low_tba"
 MICE = ["1lc", "2lc"]
@@ -89,10 +95,9 @@ def main():
         c.plot(per_week.index, per_week.values, "-o", color="#d62728")
         c.set(xlabel="week", ylabel="group frame-share",
               title=f"{mouse}: low-vigour share over weeks", ylim=(0, None))
-        c.grid(alpha=0.3)
 
     fig.tight_layout()
-    fig.savefig(OUT / "lc_low_tba.png", dpi=140)
+    save_figure(fig, OUT / "lc_low_tba.jpeg", dpi=140)
     plt.close(fig)
 
     mem = pd.concat(members, ignore_index=True)
@@ -108,7 +113,7 @@ def main():
         print(f"  {mouse}:")
         for f in FEATURE_NAMES:
             print(f"    {FEAT_SHORT[f]:9s}: group={g[f].mean():+.3f}  rest={rst[f].mean():+.3f}")
-    print(f"\nWrote {OUT}/low_vigour_clusters.csv and lc_low_tba.png")
+    print(f"\nWrote {OUT}/low_vigour_clusters.csv and lc_low_tba.jpeg")
 
 
 if __name__ == "__main__":

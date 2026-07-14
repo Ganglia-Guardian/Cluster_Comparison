@@ -37,6 +37,8 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT.parent))
+from utils import save_figure                                          # noqa: E402
+
 from cluster_arena_exclusivity import parse_segment                    # noqa: E402
 from temporal_arena_frequency import (discover, spear, CATEGORIES,     # noqa: E402
                                       ARENA_COLORS)
@@ -103,13 +105,12 @@ def plot_mouse(mouse, df, path):
         ax.set_ylim(-1.05, 1.05)
         ax.set_ylabel("Spearman ρ\n(week vs freq)")
         ax.set_title(f"{cat}  (n={len(sub)} clusters, ordered by 3D ρ)", fontsize=9)
-        ax.grid(axis="y", alpha=0.3)
         ax.legend(fontsize=8, title="arena", loc="upper left")
     grp = "control" if mouse.endswith("lc") else "MitoPark"
     fig.suptitle(f"{mouse} ({grp}): per-cluster degeneration, 2D vs 3D "
                  f"(week-vs-frequency Spearman ρ)", y=1.0, fontsize=13)
     fig.tight_layout()
-    fig.savefig(path, dpi=140, bbox_inches="tight")
+    save_figure(fig, path, dpi=140, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -141,7 +142,7 @@ def main():
                 rows.append(r)
         df = pd.DataFrame(rows)
         all_rows.extend(rows)
-        plot_mouse(mouse, df, OUT / f"{mouse}_cluster_degeneration.png")
+        plot_mouse(mouse, df, OUT / f"{mouse}_cluster_degeneration.jpeg")
         n_neg3d = int((df["rho_3D"] < 0).sum())
         print(f"  {mouse}: {len(df)} clusters "
               f"({n_neg3d} degenerating in 3D, rho_3D<0)")

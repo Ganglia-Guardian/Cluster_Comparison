@@ -37,12 +37,17 @@ Nothing here reads the `centroid_analysis/` folder.
 """
 
 import os
+import sys
 import numpy as np
 import pandas as pd
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from scipy.interpolate import LinearNDInterpolator, NearestNDInterpolator
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from utils import save_figure
 
 # --------------------------------------------------------------------------- #
 # CONFIG - edit these
@@ -280,7 +285,7 @@ def plot_h_sweep(mx, my, z_at, X, Y, Z, center, h_values, out_path):
         fontsize=13,
     )
     fig.tight_layout(rect=[0, 0, 1, 0.96])
-    fig.savefig(out_path, dpi=130)
+    save_figure(fig, out_path, dpi=130)
     plt.close(fig)
     print("wrote", out_path)
 
@@ -301,7 +306,7 @@ def plot_orientation_compare(px, py, to_m, z_at, X, Y, Z, center, h, out_path):
         fontsize=13,
     )
     fig.tight_layout(rect=[0, 0, 1, 0.96])
-    fig.savefig(out_path, dpi=130)
+    save_figure(fig, out_path, dpi=130)
     plt.close(fig)
     print("wrote", out_path)
 
@@ -346,7 +351,7 @@ def register_to_edges(tx, ty, X, Y):
 
 
 def finalize_map(mx, my, meta, z_at, slope_at, X, Y, Z, center, h,
-                 slope_grid, out_csv, out_png):
+                 slope_grid, out_csv, out_path):
     """Deproject at h, register edges->edges, export the aligned map, and plot it."""
     tx, ty = deproject(mx, my, z_at, center, h)
     rx, ry, c = register_to_edges(tx, ty, X, Y)
@@ -392,9 +397,9 @@ def finalize_map(mx, my, meta, z_at, slope_at, X, Y, Z, center, h,
         fontsize=13,
     )
     fig.tight_layout(rect=[0, 0, 1, 0.94])
-    fig.savefig(out_png, dpi=130)
+    save_figure(fig, out_path, dpi=130)
     plt.close(fig)
-    print("wrote", out_png)
+    print("wrote", out_path)
 
 
 def main():
@@ -419,15 +424,15 @@ def main():
     mx, my = orient(mx, my, X, Y, ORIENT)
 
     plot_h_sweep(mx, my, z_at, X, Y, Z, center, H_VALUES,
-                 os.path.join(OUT, f"deproject_hsweep_{DATASET}.png"))
+                 os.path.join(OUT, f"deproject_hsweep_{DATASET}.jpeg"))
     plot_orientation_compare(px, py, to_m, z_at, X, Y, Z, center,
                              h=H_VALUES[len(H_VALUES) // 2],
-                             out_path=os.path.join(OUT, f"orientation_{DATASET}.png"))
+                             out_path=os.path.join(OUT, f"orientation_{DATASET}.jpeg"))
 
     finalize_map(mx, my, meta, z_at, slope_at, X, Y, Z, center, REGISTER_H,
                  slope_grid,
                  out_csv=os.path.join(OUT, f"aligned_map_{DATASET}.csv"),
-                 out_png=os.path.join(OUT, f"aligned_map_{DATASET}.png"))
+                 out_path=os.path.join(OUT, f"aligned_map_{DATASET}.jpeg"))
 
 
 if __name__ == "__main__":

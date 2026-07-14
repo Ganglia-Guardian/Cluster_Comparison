@@ -40,6 +40,7 @@ from scipy.stats import spearmanr
 
 from cluster_transition_labels import (IDX_COL, WEEK_COL, build_transitions,
                                         is_variant, week_sort_key)
+from utils import cohort_colors, save_figure
 
 import dataset_config
 
@@ -126,12 +127,11 @@ def plot_fanout(datasets, out_path):
     axes[1].set_title("Fan-out normalized by codebook size K")
     for ax in axes:
         ax.set_xlabel("disease week")
-        ax.grid(alpha=0.3)
         ax.legend(fontsize=8)
     fig.suptitle("Transition fan-out over disease course  "
                  "(dashed = littermate control, solid = MitoPark)", y=1.02)
     fig.tight_layout()
-    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    save_figure(fig, out_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
     return out_path
 
@@ -185,9 +185,9 @@ def fit_curve(x, y, model):
 def plot_top_change(datasets, direction, model, top, out_path):
     """Overlay, for every dataset, the fitted weekly fan-out of its top
     expanding / contracting source clusters."""
-    cmap = plt.get_cmap("tab10")
+    colors = cohort_colors(datasets)
     fig, ax = plt.subplots(figsize=(11, 6.5))
-    for i, name in enumerate(datasets):
+    for name in datasets:
         pivot = source_week_fanout(load(name))
         if pivot.empty:
             continue
@@ -196,23 +196,21 @@ def plot_top_change(datasets, direction, model, top, out_path):
             continue
         x, y = series.index.to_numpy(float), series.to_numpy(float)
         rho, p = spearmanr(x, y)
-        color = cmap(i % 10)
-        style = "--" if cohort(name) == "lc" else "-"
+        color = colors[name]
         ax.scatter(x, y, color=color, alpha=0.35, s=18, edgecolors="none")
         xs, ys, slope = fit_curve(x, y, model)
         extra = f", slope={slope:+.2f}" if slope is not None else ""
-        ax.plot(xs, ys, style, color=color, lw=2.2,
+        ax.plot(xs, ys, "-", color=color, lw=2.2,
                 label=f"{name}{extra}, rho={rho:.2f}, p={p:.3f}")
 
     verb = "expansion" if direction == "expansion" else "contraction"
     ax.set_xlabel("disease week")
     ax.set_ylabel(f"distinct successors / source  (mean of top {top})")
     ax.set_title(f"Top early->late target {verb} by week  ({model} fit)\n"
-                 "dashed = littermate control, solid = MitoPark")
-    ax.grid(alpha=0.3)
+                 "orange = littermate control, green = MitoPark")
     ax.legend(fontsize=8)
     fig.tight_layout()
-    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    save_figure(fig, out_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
     return out_path
 
@@ -324,7 +322,7 @@ def plot_drift(name, top, out_path):
     fig.suptitle(f"{name}: successor-cluster frequency over disease, per source\n"
                  "(colour = fraction of that source's transitions that week; "
                  "rows sorted by when they peak)", y=1.0)
-    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    save_figure(fig, out_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
     return out_path
 
@@ -353,15 +351,15 @@ def main():
     print(f"data root: {root}   datasets: {', '.join(datasets)}")
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
-    p = plot_fanout(args.datasets, args.out_dir / "compare_fanout_by_week.png")
+    p = plot_fanout(args.datasets, args.out_dir / "compare_fanout_by_week.jpeg")
     print(f"Wrote {p}")
 
     for direction in ("expansion", "contraction"):
-        out = args.out_dir / f"compare_top_{direction}_by_week.png"
+        out = args.out_dir / f"compare_top_{direction}_by_week.jpeg"
         print(f"Wrote {plot_top_change(args.datasets, direction, args.model, args.change_top, out)}")
 
     for name in args.datasets:
-        out = DATA_ROOT / name / "successor_distribution_by_week.png"
+        out = DATA_ROOT / name / "successor_distribution_by_week.jpeg"
         res = plot_drift(name, args.top, out)
         print(f"Wrote {res}" if res else f"{name}: no clean drifting sources found")
 

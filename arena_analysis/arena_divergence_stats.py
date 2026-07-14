@@ -29,10 +29,10 @@ class labels it merges in.
 
 Outputs (arena_analysis/output/arena_divergence_stats/):
     divergence_significance.csv        per cluster: js_obs, p, q, labels, features
-    divergence_significance.png        volcano + fraction-significant-per-mouse
+    divergence_significance.jpeg       volcano + fraction-significant-per-mouse
     within_mouse_feature_similarity.csv  per batch: divergent vs null mean Dfeat
     cross_mouse_analogs.csv            nearest divergent cross-mouse pairs
-    cross_mouse_analogs.png            divergent clusters in feature PCA, analogs linked
+    cross_mouse_analogs.jpeg           divergent clusters in feature PCA, analogs linked
 
 Run:
     C:/ProgramData/anaconda3/python.exe arena_analysis/arena_divergence_stats.py
@@ -53,6 +53,7 @@ sys.path.insert(0, str(ROOT.parent))
 from cluster_arena_exclusivity import parse_segment                        # noqa: E402
 from temporal_arena_frequency import discover                             # noqa: E402
 from arena_class_split import ARENAS, CAT_COLORS                           # noqa: E402
+from utils import save_figure                                             # noqa: E402
 
 OUT = ROOT / "output" / "arena_divergence_stats"
 FEATS = ["TBA", "ap_accel", "dv_accel", "gyro"]
@@ -162,7 +163,7 @@ def plot_significance(df, path):
     ax.set(xlabel="observed 2D–3D Jensen-Shannon distance",
            ylabel="-log10 p (bout-resample null)",
            title="Per-cluster arena divergence vs sampling null")
-    ax.legend(); ax.grid(alpha=0.3)
+    ax.legend()
 
     ax = axes[1]
     agg = tested.groupby("mouse").agg(
@@ -173,8 +174,8 @@ def plot_significance(df, path):
     ax.axhline(5, ls="--", color="k", lw=0.8, alpha=0.6, label="5% (null expectation)")
     ax.set(ylabel="% clusters significantly divergent (FDR<0.05)",
            title="Genuine arena divergence by mouse")
-    ax.legend(); ax.grid(axis="y", alpha=0.3)
-    fig.tight_layout(); fig.savefig(path, dpi=140, bbox_inches="tight"); plt.close(fig)
+    ax.legend()
+    fig.tight_layout(); save_figure(fig, path, dpi=140, bbox_inches="tight"); plt.close(fig)
 
 
 # ------------------------------- part 2 ------------------------------------ #
@@ -294,8 +295,8 @@ def plot_cross_mouse(tested, X, analogs, path):
     ax.set(xlabel="feature PC1", ylabel="feature PC2",
            title="Arena-divergent clusters in physical-feature space\n"
                  "(lines = nearest cross-mouse analog pairs)")
-    ax.legend(fontsize=7, ncol=2); ax.grid(alpha=0.3)
-    fig.tight_layout(); fig.savefig(path, dpi=140, bbox_inches="tight"); plt.close(fig)
+    ax.legend(fontsize=7, ncol=2)
+    fig.tight_layout(); save_figure(fig, path, dpi=140, bbox_inches="tight"); plt.close(fig)
 
 
 def main():
@@ -321,7 +322,7 @@ def main():
     sig = significance(mice, args.min_bouts, args.nperm)
     sig = sig.merge(asc, on=["mouse", "batch", "cluster"], how="left")
     sig.to_csv(OUT / "divergence_significance.csv", index=False)
-    plot_significance(sig, OUT / "divergence_significance.png")
+    plot_significance(sig, OUT / "divergence_significance.jpeg")
 
     # baseline control: JS between the two arenas' TOTAL weekly bout profiles. If
     # the arenas were sampled equally each week this is ~0, so any per-cluster
@@ -374,7 +375,7 @@ def main():
     # --- Part 3 ---
     stat, analogs, tt, X = cross_mouse_analogs(sig)
     analogs.to_csv(OUT / "cross_mouse_analogs.csv", index=False)
-    plot_cross_mouse(tt, X, analogs, OUT / "cross_mouse_analogs.png")
+    plot_cross_mouse(tt, X, analogs, OUT / "cross_mouse_analogs.jpeg")
     print("\n=== Part 3: cross-mouse analogs of divergent clusters ===")
     print(f"  divergent clusters more cross-mouse-similar than chance: "
           f"obs NN {stat['obs_mean_NN']} vs null {stat['null_mean_NN']} "

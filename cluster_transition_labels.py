@@ -61,12 +61,13 @@ import re
 from pathlib import Path
 
 import matplotlib
-matplotlib.use("Agg")  # headless: write PNGs without a display
+matplotlib.use("Agg")  # headless: write JPEGs without a display
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
 import dataset_config
+from utils import save_figure
 
 # --- column names in the input CSV ------------------------------------------
 IDX_COL = "ClusterIdx"
@@ -322,8 +323,8 @@ def make_plots(trans, pairs, progression_weeks, out_dir, per_cat=15):
     axes[1].set_ylim(0, 1)
     axes[1].set_title("Category composition of the repertoire over time")
     fig.tight_layout()
-    p = out_dir / "transition_categories_by_week.png"
-    fig.savefig(p, dpi=150); plt.close(fig); written.append(p)
+    p = out_dir / "transition_categories_by_week.jpeg"
+    save_figure(fig, p, dpi=150); plt.close(fig); written.append(p)
 
     # --- Figure 2: presence heatmap of a sample of transitions, banded by cat --
     # take the top `per_cat` transitions by count within each category so every
@@ -365,8 +366,8 @@ def make_plots(trans, pairs, progression_weeks, out_dir, per_cat=15):
             ax.text(-0.6, start, lab, ha="right", va="top", fontsize=8,
                     color=CATEGORY_COLORS[lab], fontweight="bold")
         fig.tight_layout()
-        p = out_dir / "transition_presence_heatmap.png"
-        fig.savefig(p, dpi=150); plt.close(fig); written.append(p)
+        p = out_dir / "transition_presence_heatmap.jpeg"
+        save_figure(fig, p, dpi=150); plt.close(fig); written.append(p)
 
     # --- Figure 3: target fan-out per source over time (degeneration) ----------
     fan = (prog.groupby(["source", "week"])["target"].nunique()
@@ -394,8 +395,8 @@ def make_plots(trans, pairs, progression_weeks, out_dir, per_cat=15):
     axes[1].set_title("Sources with the largest early->late target expansion")
     axes[1].legend(fontsize=8, ncol=2)
     fig.tight_layout()
-    p = out_dir / "transition_target_fanout.png"
-    fig.savefig(p, dpi=150); plt.close(fig); written.append(p)
+    p = out_dir / "transition_target_fanout.jpeg"
+    save_figure(fig, p, dpi=150); plt.close(fig); written.append(p)
 
     return written
 

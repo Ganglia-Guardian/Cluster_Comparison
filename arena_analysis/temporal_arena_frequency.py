@@ -47,6 +47,8 @@ from scipy.stats import spearmanr
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT.parent))
+from utils import save_figure                                # noqa: E402
+
 from cluster_arena_exclusivity import parse_segment          # noqa: E402
 
 DEFAULT_DATA_ROOT = Path("E:/arena_analysis")
@@ -153,7 +155,6 @@ def plot_mouse(mouse, df, path):
         ax.set_xticklabels(weeks)
         ax.set_xlabel("disease week")
         ax.set_ylabel("share of week+arena time")
-        ax.grid(axis="y", alpha=0.3)
         ax.legend(fontsize=8, title="arena")
     for ax in axes[len(CATEGORIES):]:
         ax.set_visible(False)
@@ -161,7 +162,7 @@ def plot_mouse(mouse, df, path):
     fig.suptitle(f"{mouse} ({grp}): temporal-class frequency by week, 2D vs 3D",
                  y=1.0, fontsize=13)
     fig.tight_layout()
-    fig.savefig(path, dpi=140, bbox_inches="tight")
+    save_figure(fig, path, dpi=140, bbox_inches="tight")
     plt.close(fig)
     return trend_rows
 
@@ -193,7 +194,7 @@ def main():
         df = pd.DataFrame(rows)
         freq_rows.extend(rows)
         trend_rows.extend(
-            plot_mouse(mouse, df, OUT / f"{mouse}_temporal_arena_frequency.png"))
+            plot_mouse(mouse, df, OUT / f"{mouse}_temporal_arena_frequency.jpeg"))
         print(f"  {mouse}: {len(batches)} batches, "
               f"weeks {sorted(df['week'].unique())}")
 

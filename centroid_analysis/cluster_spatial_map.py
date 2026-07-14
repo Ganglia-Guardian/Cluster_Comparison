@@ -11,11 +11,11 @@ For each cluster event (from `session_X_out.mat`, table `Clusters.idx_ts`, OR fr
 detail CSV via --detail-csv) it finds the mouse's (x, y) position at that moment (from
 the `mouse_centroid_*.csv` tracking file), then produces:
   1. cluster_positions.csv        - merged table: cluster_id, rel_time_s, x, y, match_gap_s
-  2. cluster_map_combined.png     - all clusters as colored dots over the arena
-  3. cluster_map_faceted.png      - one panel per cluster (best for spotting hot-spots)
-  4. cluster_accel_map.png        - events colored by acceleration + colorbar
+  2. cluster_map_combined.jpeg    - all clusters as colored dots over the arena
+  3. cluster_map_faceted.jpeg     - one panel per cluster (best for spotting hot-spots)
+  4. cluster_accel_map.jpeg       - events colored by acceleration + colorbar
                                     (only with --features-csv / a 'features' file)
-  5. cluster_density_map.png      - events colored by local position density + colorbar
+  5. cluster_density_map.jpeg     - events colored by local position density + colorbar
   6. (optional) photo overlays    - the same, but on top of a real arena video frame
 
 --------------------------------------------------------------------------------------
@@ -80,15 +80,18 @@ NOTES / ASSUMPTIONS
   * Pixel origin is TOP-LEFT (y increases downward), matching how a video frame displays.
   * Photo auto-alignment assumes the tracking video is a 1:1 (unscaled) crop of the
     camera frame, and locates the mouse at time 0 by finding the darkest compact blob.
-    Verify cluster_map_alignment_check.png; nudge --offset-x/--offset-y if needed.
+    Verify cluster_map_alignment_check.jpeg; nudge --offset-x/--offset-y if needed.
 """
 
-import os, csv, argparse
+import os, sys, csv, argparse
 import numpy as np
 import h5py
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from utils import save_figure  # noqa: E402
 
 # Fixed arena extent (pixels) for the data-derived maps, so every session/week is
 # drawn on identical axes instead of auto-scaling to its own position min/max.
@@ -343,10 +346,10 @@ def plot_plain(cluster_id, ex, ey, cx, cy, outdir):
     ax.legend(title="Cluster", bbox_to_anchor=(1.01, 1), loc="upper left",
               ncol=2, fontsize=7, markerscale=1.4)
     plt.tight_layout()
-    fig.savefig(os.path.join(outdir, "cluster_map_combined.png"), dpi=150, bbox_inches="tight")
+    save_figure(fig, os.path.join(outdir, "cluster_map_combined.jpeg"), dpi=150, bbox_inches="tight")
     plt.close(fig)
 
-    _facet(uids, cluster_id, ex, ey, col, outdir, "cluster_map_faceted.png",
+    _facet(uids, cluster_id, ex, ey, col, outdir, "cluster_map_faceted.jpeg",
            bg=("occ", occ, W, H))
 
 
@@ -371,7 +374,7 @@ def plot_photo(cluster_id, ex, ey, cx, cy, frame_path, outdir, ox, oy, scale):
     ax.set_xlim(0, W); ax.set_ylim(H, 0); ax.axis("off")
     ax.set_title("Alignment check: trajectory (cyan) + tracked time-0 (red star)")
     ax.legend(loc="lower right")
-    fig.savefig(os.path.join(outdir, "cluster_map_alignment_check.png"), dpi=140, bbox_inches="tight")
+    save_figure(fig, os.path.join(outdir, "cluster_map_alignment_check.jpeg"), dpi=140, bbox_inches="tight")
     plt.close(fig)
 
     # combined overlay
@@ -385,10 +388,10 @@ def plot_photo(cluster_id, ex, ey, cx, cy, frame_path, outdir, ox, oy, scale):
     ax.set_title("Behavior clusters over arena (%d events, %d clusters)" % (len(ex), len(uids)))
     ax.legend(title="Cluster", bbox_to_anchor=(1.005, 1), loc="upper left",
               ncol=2, fontsize=7, markerscale=1.5)
-    fig.savefig(os.path.join(outdir, "cluster_photo_overlay.png"), dpi=160, bbox_inches="tight")
+    save_figure(fig, os.path.join(outdir, "cluster_photo_overlay.jpeg"), dpi=160, bbox_inches="tight")
     plt.close(fig)
 
-    _facet(uids, cluster_id, ex, ey, col, outdir, "cluster_photo_faceted.png",
+    _facet(uids, cluster_id, ex, ey, col, outdir, "cluster_photo_faceted.jpeg",
            bg=("img", img, W, H), mapxy=(mx, my))
 
 
@@ -413,7 +416,7 @@ def _facet(uids, cluster_id, ex, ey, col, outdir, fname, bg, mapxy=None):
         axes[k].axis("off")
     fig.suptitle("Per-cluster locations over arena", y=1.0, fontsize=12)
     plt.tight_layout()
-    fig.savefig(os.path.join(outdir, fname), dpi=140, bbox_inches="tight")
+    save_figure(fig, os.path.join(outdir, fname), dpi=140, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -448,13 +451,13 @@ def _scatter_colored(values, ex, ey, cx, cy, outdir, cmap, clabel, title_tmpl,
         H, W = img.shape[:2]
         px = ex[finite] * scale + ox
         py = ey[finite] * scale + oy
-        fname, figsize = base_name + "_overlay.png", (12, 8)
+        fname, figsize = base_name + "_overlay.jpeg", (12, 8)
     else:
         W, H = ARENA_W, ARENA_H
         hist, _, _ = np.histogram2d(cx, cy, bins=120, range=[[0, W], [0, H]])
         img = np.log1p(hist.T)
         px, py = ex[finite], ey[finite]
-        fname, figsize = base_name + "_map.png", (11, 10)
+        fname, figsize = base_name + "_map.jpeg", (11, 10)
 
     fig, ax = plt.subplots(figsize=figsize)
     if frame_path:
@@ -470,7 +473,7 @@ def _scatter_colored(values, ex, ey, cx, cy, outdir, cmap, clabel, title_tmpl,
     cbar = fig.colorbar(sc, ax=ax, fraction=0.046, pad=0.04)
     cbar.set_label(clabel)
     plt.tight_layout()
-    fig.savefig(os.path.join(outdir, fname), dpi=150, bbox_inches="tight")
+    save_figure(fig, os.path.join(outdir, fname), dpi=150, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -948,7 +951,7 @@ def main():
             print("photo    : using manual offset (%.1f, %.1f), scale %.3f" % (ox, oy, args.scale))
         else:
             ox, oy = auto_offset(frame_path, cx[0], cy[0], args.scale)
-            print("photo    : auto offset (%.1f, %.1f), scale %.3f  [verify alignment_check.png]"
+            print("photo    : auto offset (%.1f, %.1f), scale %.3f  [verify alignment_check.jpeg]"
                   % (ox, oy, args.scale))
         plot_photo(cluster_id, ex, ey, cx, cy, frame_path, args.outdir, ox, oy, args.scale)
         plot_density(ex, ey, cx, cy, args.outdir, frame_path, ox, oy, args.scale,

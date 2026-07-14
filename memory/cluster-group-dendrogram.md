@@ -36,7 +36,7 @@ cluster's centroid drifts over disease weeks. Each week maps to exactly one batc
 (w8->8,11,14,17,20,23; w9->9,12..24; w10->10,13,16,19,22; verified no week spans 2
 batches). `week_dendrogram.py` builds a dendrogram per (mouse,week) from
 week-specific centroids (drop clusters <15 frames/week, k=5), writes
-output/week_dendrogram/<mouse>/w<NN>.png + week_stats.csv + summary.png. Summary
+output/week_dendrogram/<mouse>/w<NN>.jpeg + week_stats.csv + summary.jpeg. Summary
 (3 line panels vs week, one line/mouse): median TBA cleanly separates controls
 (~0.30, flat) from MP (decline to ~0.15) at weekly resolution — bradykinesia; 3mp
 occ3d-eta² pinned near 0 every week (branches never arena-segregate).
@@ -48,7 +48,7 @@ have mean TBA ~0.06 vs ~0.34 rest. Kinematic signature: very low TBA (z~-1.6) bu
 PRESERVED/elevated AP-accel (z~+0.5) and near-normal y-gyro -> a specific
 low-vigour flat-arena behaviour, NOT global immobility. Week frame-share is spiky
 (present every week, big session-to-session swings, no monotonic trend — expected
-for controls). Output: output/lc_low_tba/ (lc_low_tba.png, low_vigour_clusters.csv).
+for controls). Output: output/lc_low_tba/ (lc_low_tba.jpeg, low_vigour_clusters.csv).
 
 Design note: merge features INCLUDE TBA, so branch TBA-homogeneity is circular;
 we report TBA eta² only as a CEILING to read the (independent) occ3d eta² against.

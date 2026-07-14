@@ -9,9 +9,9 @@ repo root as the working directory and this folder + repo root on PYTHONPATH.
 Dependency order:
     presence_similarity   -> out/{mouse}/presence.npz  (foundation; all mice)
     feature_similarity    -> out/{mouse}/feature.npz    (reads presence.npz)
-    feature_time_map      -> out/{mouse}/feature_time_map.png
-    joint_plane           -> out/{mouse}/{joint_plane.png, *_candidates.csv}
-    temporal_classify     -> out/{mouse}/temporal_classes.{csv,png}
+    feature_time_map      -> out/{mouse}/feature_time_map.jpeg
+    joint_plane           -> out/{mouse}/{joint_plane.jpeg, *_candidates.csv}
+    temporal_classify     -> out/{mouse}/temporal_classes.{csv,jpeg}
 
 Only feature_similarity takes an argument (--mouse); every other stage iterates
 all mice on its own. Passing --mouse limits which feature.npz is (re)built, so

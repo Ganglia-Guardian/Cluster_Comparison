@@ -17,6 +17,7 @@ Run (after temporal_classify.py):
     C:/ProgramData/anaconda3/python.exe degeneracy_analysis/evolution_commonalities.py
 """
 import os
+import sys
 import numpy as np
 import pandas as pd
 import matplotlib
@@ -24,6 +25,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from scipy.stats import mannwhitneyu
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from utils import save_figure
 from presence_similarity import MICE, OUT
 
 METRICS = ["TBA", "gyro", "ap_accel", "dv_accel", "size", "self_dist",
@@ -92,7 +95,7 @@ def _plot(df, res, flag, path):
     fig.suptitle(f"Evolution-candidate signature (pooled MitoPark, flag={flag})",
                  fontsize=12)
     fig.tight_layout()
-    fig.savefig(path, dpi=130)
+    save_figure(fig, path, dpi=130)
     plt.close(fig)
 
 
@@ -117,8 +120,8 @@ def main():
     print(f"  MitoPark resting fraction: {mp.resting.mean():.3f}   "
           f"control resting fraction: {df[df.group=='control'].resting.mean():.3f}")
 
-    _plot(mp, res, "changed", f"{OUT}/evolution_commonalities.png")
-    print(f"\nsaved {OUT}/evolution_commonalities.png and {OUT}/all_clusters.csv")
+    _plot(mp, res, "changed", f"{OUT}/evolution_commonalities.jpeg")
+    print(f"\nsaved {OUT}/evolution_commonalities.jpeg and {OUT}/all_clusters.csv")
 
 
 if __name__ == "__main__":

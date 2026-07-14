@@ -26,6 +26,8 @@ Plus CSVs of the top degeneracy and chain candidate pairs.
 Run (after presence_similarity.py and feature_similarity.py):
     C:/ProgramData/anaconda3/python.exe degeneracy_analysis/joint_plane.py
 """
+import os
+import sys
 import numpy as np
 import pandas as pd
 from scipy.stats import rankdata, norm, spearmanr
@@ -33,6 +35,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from utils import save_figure
 from presence_similarity import MICE, OUT
 
 FEAT_SIMILAR_PCT = 20     # "feature-similar" = pairs in the lowest this-% of Dfeat_norm
@@ -116,7 +120,7 @@ def _plot(mouse, P, fsim, degen, chain, xthr, rho):
     axp.set_title(f"{mouse}: angular density\n(0=high Dfeat, pi/2=high presence dist)", fontsize=9)
 
     fig.tight_layout()
-    fig.savefig(f"{OUT}/{mouse}/joint_plane.png", dpi=115)
+    save_figure(fig, f"{OUT}/{mouse}/joint_plane.jpeg", dpi=115)
     plt.close(fig)
 
 
@@ -138,7 +142,6 @@ def _tables(mouse, P, degen, chain):
 
 
 if __name__ == "__main__":
-    import os
     for m in MICE:
         if os.path.exists(f"{OUT}/{m}/feature.npz"):
             analyze(m)

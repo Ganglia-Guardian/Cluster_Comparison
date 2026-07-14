@@ -1,10 +1,19 @@
 import argparse
+import colorsys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from matplotlib.colors import to_rgb
 from scipy.io import loadmat
 from sklearn.metrics import silhouette_samples, silhouette_score
+
+# Cohort palette, in homage to UT Dallas: littermate controls (*lc) in shades of
+# medium-bright orange, MitoPark (*mp) in shades of medium-dark green. Cohort
+# reads off the hue, individual mouse off the lightness, which frees the line
+# style -- every line stays solid.
+UTD_GREEN = "#2E6F4E"          # medium-dark green   -> MitoPark
+UTD_ORANGE = "#F08C1E"         # medium-bright orange -> controls
 
 
 def load_mat(path):
@@ -49,6 +58,81 @@ def mat_to_csv(mat_path, csv_path=None):
     df.to_csv(csv_path, index=False)
     print(f"Wrote {csv_path} ({df.shape[0]} rows, {df.shape[1]} columns)")
     return csv_path
+
+
+def cohort_of(name):
+    """'lc' (littermate control) or 'mp' (MitoPark) from a dataset/mouse name."""
+    return "lc" if "lc" in str(name).lower() else "mp"
+
+
+def _shades(base, n, spread=0.34):
+    """``n`` shades of ``base``, darkest first, by walking lightness around it.
+
+    Hue and saturation are held fixed so every shade still reads as the same
+    colour; only lightness separates the mice within a cohort.
+    """
+    hue, light, sat = colorsys.rgb_to_hls(*to_rgb(base))
+    if n <= 1:
+        levels = [light]
+    else:
+        lo = max(light - spread / 2, 0.18)
+        hi = min(light + spread / 2, 0.78)
+        levels = np.linspace(lo, hi, n)
+    return [colorsys.hls_to_rgb(hue, lv, sat) for lv in levels]
+
+
+def cohort_colors(names):
+    """Map dataset/mouse names to their cohort colour: ``{name: rgb}``.
+
+    Controls (*lc) get shades of ``UTD_ORANGE``, MitoPark (*mp) shades of
+    ``UTD_GREEN``. Within a cohort the names are sorted and the shades spread
+    darkest-to-lightest over however many mice are present, so the same set of
+    mice always produces the same assignment.
+    """
+    out = {}
+    for coh, base in (("lc", UTD_ORANGE), ("mp", UTD_GREEN)):
+        members = sorted(n for n in names if cohort_of(n) == coh)
+        out.update(zip(members, _shades(base, len(members))))
+    return out
+
+
+def apply_house_style(fig):
+    """Force the house style onto every axes in ``fig``: white backgrounds, no
+    grid, and only the left/bottom spines drawn.
+
+    Applied at save time by ``save_figure`` so the style holds no matter how the
+    figure was built (including under a seaborn theme). Colorbars keep their
+    outline, and non-rectilinear axes (polar, 3-D) keep their spines, since for
+    those the frame carries meaning rather than decoration.
+    """
+    fig.patch.set_facecolor("white")
+    for ax in fig.axes:
+        is_colorbar = ax.get_label() == "<colorbar>"
+        if is_colorbar:
+            continue
+        ax.set_facecolor("white")
+        ax.grid(False)
+        if ax.name == "rectilinear":
+            ax.spines["top"].set_visible(False)
+            ax.spines["right"].set_visible(False)
+
+
+def save_figure(fig, path, **savefig_kwargs):
+    """Save a figure as a JPEG plus a companion SVG, returning both paths.
+
+    The SVG is written alongside the JPEG under an underscore-prefixed name
+    ("foo.jpeg" -> "_foo.svg") so the vector copy sorts first in a directory
+    listing. Any suffix on ``path`` is replaced, so passing either name works.
+
+    The house style (see ``apply_house_style``) is enforced before writing.
+    """
+    apply_house_style(fig)
+    path = Path(path)
+    jpeg_path = path.with_suffix(".jpeg")
+    svg_path = path.with_name("_" + path.stem + ".svg")
+    fig.savefig(jpeg_path, **savefig_kwargs)
+    fig.savefig(svg_path, **savefig_kwargs)
+    return jpeg_path, svg_path
 
 
 def similarity_to_distance(sim):

@@ -28,6 +28,8 @@ Run:  uv run python cluster_group_analysis/dendrogram.py            # k=6
       uv run python cluster_group_analysis/dendrogram.py --k 8
 """
 import argparse
+import sys
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -37,6 +39,9 @@ from scipy.cluster.hierarchy import dendrogram, fcluster, linkage
 
 from common import ROOT
 from feature_extraction import FEATURE_NAMES
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # repo root
+from utils import save_figure  # noqa: E402
 
 OUT = ROOT / "output" / "dendrogram"
 OCC_CMAP = plt.cm.RdBu          # 0 -> red (2D), 1 -> blue (3D)
@@ -102,7 +107,6 @@ def plot_tree(sub, Z, branch, leaves, k, batches, title, path):
                above_threshold_color="#999999", no_labels=True)
     ax_d.set(ylabel="Ward distance", title=title)
     ax_d.tick_params(labelbottom=False)
-    ax_d.spines[["top", "right"]].set_visible(False)
 
     # source-batch strip (categorical)
     bidx = np.array([batches.index(b) for b in sub["batch"]])
@@ -127,7 +131,7 @@ def plot_tree(sub, Z, branch, leaves, k, batches, title, path):
     ax_d.legend(handles=[plt.Rectangle((0, 0), 1, 1, color=BATCH_CMAP(i))
                          for i in range(len(batches))],
                 labels=batches, title="batch", fontsize=8, loc="upper right")
-    fig.savefig(path, dpi=150, bbox_inches="tight")
+    save_figure(fig, path, dpi=150, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -155,7 +159,7 @@ def main():
         plot_tree(sub, Z, branch, leaves, args.k, batches,
                   f"{mouse}  ({len(sub)} clusters from {'+'.join(batches)} "
                   f"-> {args.k} branches)",
-                  OUT / f"{mouse}_dendro.png")
+                  OUT / f"{mouse}_dendro.jpeg")
 
         rec = sub.copy()
         rec["branch"] = branch

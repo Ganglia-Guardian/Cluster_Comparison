@@ -16,6 +16,7 @@ Run:  python arena_bars.py
 """
 
 import os
+import sys
 import numpy as np
 import pandas as pd
 import matplotlib
@@ -23,8 +24,11 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from scipy.spatial import cKDTree
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import deproject_centroids as dc
 import slope_transitions as st
+from utils import save_figure
 
 DATA_3D = dc.DATA
 DATA_2D = os.path.join(os.path.dirname(dc.DATA), "data_open")
@@ -108,7 +112,6 @@ def make_panel(ax, weeks, mice, rates3d, rates2d, title):
     ax.set_xticks(xticks)
     ax.set_xticklabels(xticklabels)
     ax.set_title(title)
-    ax.grid(axis="y", alpha=0.3)
 
 
 def main():
@@ -130,8 +133,8 @@ def main():
                  "(bar = mean over mice, points = individual mice, error = std)",
                  y=1.0)
     fig.tight_layout(rect=[0, 0.04, 1, 0.96])
-    out = os.path.join(dc.OUT, "arena_transition_bars.png")
-    fig.savefig(out, dpi=130, bbox_inches="tight")
+    out = os.path.join(dc.OUT, "arena_transition_bars.jpeg")
+    save_figure(fig, out, dpi=130, bbox_inches="tight")
     plt.close(fig)
     print("wrote", out)
 

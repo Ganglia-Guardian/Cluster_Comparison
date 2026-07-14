@@ -23,17 +23,23 @@ Inputs:  cluster_branches.csv, cluster_week_counts.csv  (built by the prior step
 Outputs (cluster_group_analysis/output/branches/):
     branch_summary.csv   one row per (mouse, branch)
     mouse_stats.csv      one row per mouse: eta^2 / test results
-    <mouse>_branches.png   3-panel: occ3d, TBA, week heatmap per branch
-    overview.png         eta^2(occ3d) vs eta^2(TBA) across mice + verdict counts
+    <mouse>_branches.jpeg   3-panel: occ3d, TBA, week heatmap per branch
+    overview.jpeg        eta^2(occ3d) vs eta^2(TBA) across mice + verdict counts
 
 Run:  uv run python cluster_group_analysis/branch_analysis.py
 """
+import sys
+from pathlib import Path
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy.stats import chi2_contingency, kruskal
 
 from common import ROOT
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # repo root
+from utils import save_figure  # noqa: E402
 
 OUT = ROOT / "output" / "branches"
 OCC_CMAP = plt.cm.RdBu
@@ -124,7 +130,7 @@ def plot_batch(bs, wm, title, path):
 
     fig.suptitle(title, y=1.0)
     fig.tight_layout()
-    fig.savefig(path, dpi=140, bbox_inches="tight")
+    save_figure(fig, path, dpi=140, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -146,7 +152,7 @@ def main():
         wk_sub = wk[wk.mouse == mouse]
         wm = week_matrix(wk_sub, sub["branch"].unique())
         plot_batch(bs, wm, f"{mouse}  branch characterization (w8+w9+w10 pooled)",
-                   OUT / f"{mouse}_branches.png")
+                   OUT / f"{mouse}_branches.jpeg")
 
         # Q1: does occ3d differ by branch? eta^2 + Kruskal-Wallis
         groups = sub["branch"].to_numpy()
@@ -173,7 +179,7 @@ def main():
     allbs.to_csv(OUT / "branch_summary.csv", index=False)
     st = pd.DataFrame(stats)
     st.to_csv(OUT / "mouse_stats.csv", index=False)
-    plot_overview(st, OUT / "overview.png")
+    plot_overview(st, OUT / "overview.jpeg")
     report(st, allbs)
 
 
@@ -202,7 +208,7 @@ def plot_overview(st, path):
     a1.set_xticklabels(lab, rotation=90, fontsize=7)
     a1.legend(fontsize=8, title="verdict")
     fig.tight_layout()
-    fig.savefig(path, dpi=140)
+    save_figure(fig, path, dpi=140)
     plt.close(fig)
 
 
@@ -225,7 +231,7 @@ def report(st, allbs):
     sigw = (st["week_chi2_p"] < 0.05).sum()
     print(f"  branch x week chi-square significant in {sigw}/{len(st)} mice; "
           f"Cramer's V median={st['week_cramers_v'].median():.3f}")
-    print(f"\nWrote {OUT}/branch_summary.csv, mouse_stats.csv, overview.png, "
+    print(f"\nWrote {OUT}/branch_summary.csv, mouse_stats.csv, overview.jpeg, "
           "and per-mouse panels")
 
 

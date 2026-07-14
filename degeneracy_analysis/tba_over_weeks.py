@@ -26,6 +26,7 @@ from scipy.stats import gaussian_kde, spearmanr
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from feature_extraction import load_funct_features, bin_features, FEATURE_NAMES
+from utils import save_figure
 from presence_similarity import MICE, DATA, OUT, natural_week, MIN_WEEK_FRAC
 
 RESTING_TBA = 0.10
@@ -83,7 +84,7 @@ def plot(mouse, wk, tba, out_path, subtitle=""):
     ax.set_title(f"{mouse} ({grp}): TBA distribution by week{sub}\n"
                  f"weekly-median trend rho={rho:+.2f}, p={p:.3f}")
     fig.tight_layout()
-    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    save_figure(fig, out_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
     return rho, p
 
@@ -106,7 +107,7 @@ def category_plots(mouse, wk, tba, cidx):
     os.makedirs(folder, exist_ok=True)
     for name, keep in CATEGORY_SUBSETS.items():
         sel = np.isin(wlabel, keep)
-        plot(mouse, wk[sel], tba[sel], f"{folder}/{name}.png",
+        plot(mouse, wk[sel], tba[sel], f"{folder}/{name}.jpeg",
              subtitle=f"{name} clusters, {int(sel.sum())} windows")
 
 def main():
@@ -115,8 +116,8 @@ def main():
             continue
         wk, tba, cidx = window_data(m)
         os.makedirs(f"{OUT}/{m}", exist_ok=True)
-        rp = plot(m, wk, tba, f"{OUT}/{m}/tba_over_weeks.png")
-        print(f"{m}: tba_over_weeks.png  rho={rp[0]:+.2f} p={rp[1]:.3f}"
+        rp = plot(m, wk, tba, f"{OUT}/{m}/tba_over_weeks.jpeg")
+        print(f"{m}: tba_over_weeks.jpeg  rho={rp[0]:+.2f} p={rp[1]:.3f}"
               if rp else f"{m}: base plot skipped")
         if not m.endswith("lc") and os.path.exists(f"{OUT}/{m}/temporal_classes.csv"):
             category_plots(m, wk, tba, cidx)

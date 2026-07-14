@@ -31,6 +31,7 @@ from scipy.stats import spearmanr
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT.parent))
 from cluster_transition_labels import build_transitions, week_sort_key   # noqa: E402
+from utils import save_figure                                           # noqa: E402
 
 from arena_transitions import (ARENA_COLOR, ARENA_STYLE, ARENAS,           # noqa: E402
                                masked_df)
@@ -95,7 +96,7 @@ def main():
                                 "delta_rho": dr, "delta_p": dp,
                                 "downhill_rho": fr, "downhill_p": fp})
             plot_dataset(by_arena, f"{mouse} {batch}",
-                         OUT / f"{mouse}_{batch}_tba_flow.png")
+                         OUT / f"{mouse}_{batch}_tba_flow.jpeg")
             print(f"  {mouse}/{batch}: TBA-flow computed for both arenas")
 
     pd.DataFrame(week_rows).to_csv(OUT / "tba_flow_by_arena.csv", index=False)
@@ -120,9 +121,9 @@ def plot_dataset(by_arena, title, path):
     axes[1].set(xlabel="disease week", ylabel="fraction of transitions stepping down",
                 title="Downhill-transition fraction")
     for ax in axes:
-        ax.grid(alpha=0.3); ax.legend(title="arena  (2D dashed, 3D solid)")
+        ax.legend(title="arena  (2D dashed, 3D solid)")
     fig.suptitle(title, y=1.0)
-    fig.tight_layout(); fig.savefig(path, dpi=140, bbox_inches="tight"); plt.close(fig)
+    fig.tight_layout(); save_figure(fig, path, dpi=140, bbox_inches="tight"); plt.close(fig)
 
 
 if __name__ == "__main__":

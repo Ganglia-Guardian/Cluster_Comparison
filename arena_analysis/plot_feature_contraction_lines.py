@@ -22,7 +22,7 @@ IMU axes are BODY-RELATIVE (anchored to the mouse, not a global frame):
 The accel/gyro axes are signed, so their per-window mean can cancel; --abs uses
 the mean magnitude instead, the better readout for turning/tilt intensity.
 
-Figures: output/feature_contraction_lines/<mouse>/<feature>/week<startweek>.png
+Figures: output/feature_contraction_lines/<mouse>/<feature>/week<startweek>.jpeg
 
 Run:
     uv run python arena_analysis/plot_feature_contraction_lines.py
@@ -30,6 +30,7 @@ Run:
     uv run python arena_analysis/plot_feature_contraction_lines.py --feature all --n 5
 """
 import argparse
+import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -37,6 +38,9 @@ import numpy as np
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(ROOT.parent))
+from utils import save_figure          # noqa: E402
+
 OUT = ROOT / "output" / "feature_contraction_lines"
 ARENAS = ["2D", "3D"]
 
@@ -120,7 +124,6 @@ def plot_dataset(frames, mouse, batch, feature, n, min_frames, min_weeks, comple
         for c in top:
             ax.plot(t.index, t[c], marker="o", ms=5, color=colors[c], label=f"cluster {c}")
         ax.set(xlabel="week", title=f"{arena} arena", xticks=weeks)
-        ax.grid(alpha=0.3)
     ylab = f"mean |{label}|" if use_abs else f"mean {label}"
     axes[0].set_ylabel(ylab)
     axes[0].set_ylim(ymin - pad, ymax + pad)
@@ -134,8 +137,8 @@ def plot_dataset(frames, mouse, batch, feature, n, min_frames, min_weeks, comple
 
     out_dir = OUT / mouse / tag
     out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / f"week{start_week}{'_complete' if complete else ''}.png"
-    fig.savefig(path, dpi=140, bbox_inches="tight")
+    path = out_dir / f"week{start_week}{'_complete' if complete else ''}.jpeg"
+    save_figure(fig, path, dpi=140, bbox_inches="tight")
     plt.close(fig)
     print(f"  {mouse}/{batch} [{tag}]: clusters {top} -> {path}")
 

@@ -28,10 +28,10 @@ arena is an all-grey row. Row order is decided by one function -- order_rows() -
 so it is easy to change (default: temporal section, then pooled centroid week).
 
 Outputs (arena_analysis/output/arena_class_split/):
-    arena_class_split.csv                     per-cluster pooled/2D/3D labels + centroids
-    <mouse>_class_confusion.png               label_2D x label_3D count heatmap
-    <mouse>_<batch>_2D_presence_heatmap.png   2D per-week presence, temporal-class ordered
-    <mouse>_<batch>_3D_presence_heatmap.png   3D per-week presence, same row order
+    arena_class_split.csv                      per-cluster pooled/2D/3D labels + centroids
+    <mouse>_class_confusion.jpeg               label_2D x label_3D count heatmap
+    <mouse>_<batch>_2D_presence_heatmap.jpeg   2D per-week presence, temporal-class ordered
+    <mouse>_<batch>_3D_presence_heatmap.jpeg   3D per-week presence, same row order
 
 Run:
     C:/ProgramData/anaconda3/python.exe arena_analysis/arena_class_split.py
@@ -51,6 +51,7 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT.parent))
 from cluster_arena_exclusivity import parse_segment                        # noqa: E402
 from temporal_arena_frequency import discover                             # noqa: E402
+from utils import save_figure                                             # noqa: E402
 
 OUT = ROOT / "output" / "arena_class_split"
 ARENAS = ["2D", "3D"]
@@ -213,7 +214,7 @@ def plot_presence_heatmap(mouse, batch, arena, disp, weeks, meta, path):
                  f"{int(changed.sum())}/{len(clusters)} clusters)")
     fig.colorbar(im, ax=ax, label="presence (row-max normalized)", shrink=0.5, pad=0.02)
     fig.tight_layout()
-    fig.savefig(path, dpi=140, bbox_inches="tight")
+    save_figure(fig, path, dpi=140, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -243,7 +244,7 @@ def plot_confusion(mouse, df, path):
                  f"({n_disc}/{len(both)} classifiable in both)")
     fig.colorbar(im, ax=ax, label="clusters", shrink=0.7)
     fig.tight_layout()
-    fig.savefig(path, dpi=140, bbox_inches="tight")
+    save_figure(fig, path, dpi=140, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -281,7 +282,7 @@ def main():
                                    for r, m in zip(pres, nz)])
                 disp = pres / np.where(rowmax > 0, rowmax, np.nan)[:, None]
                 plot_presence_heatmap(mouse, tag, a, disp, weeks, bdf,
-                                      OUT / f"{mouse}_{tag}_{a}_presence_heatmap.png")
+                                      OUT / f"{mouse}_{tag}_{a}_presence_heatmap.jpeg")
 
             parts.append(bdf.assign(mouse=mouse, batch=tag))
 
@@ -290,7 +291,7 @@ def main():
                                   if c not in ("mouse", "batch")]]
     df.to_csv(OUT / "arena_class_split.csv", index=False)
     for mouse, g in df.groupby("mouse"):
-        plot_confusion(mouse, g, OUT / f"{mouse}_class_confusion.png")
+        plot_confusion(mouse, g, OUT / f"{mouse}_class_confusion.jpeg")
 
     # --- reclassification tally: how often each arena's label differs from pooled ---
     tally = []

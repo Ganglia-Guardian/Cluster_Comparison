@@ -46,6 +46,7 @@ from scipy.stats import spearmanr
 from cluster_sim_by_week import week_bin_ranges, week_sort_key
 from split_half_occupancy import (CSV_NAME, DATA_ROOT, MAT_NAME, load_idx,
                                   occupancy)
+from utils import cohort_colors, save_figure
 
 N_BASELINE_WEEKS = 2     # earliest valid weeks pooled as the "before" reference
 N_BOOT = 500             # bootstrap draws for the per-week null floor
@@ -142,21 +143,21 @@ def plot_drift(df, k, used, rho, p, ds_name, out_dir):
     ax.set_title(f"{ds_name}: within-mouse occupancy drift  (K={k}, baseline="
                  f"{'+'.join(used)})\nSpearman drift vs week: rho={rho:.2f}, "
                  f"p={p:.3g}  -> {sig}")
-    ax.legend(fontsize=8, loc="upper left"); ax.grid(alpha=0.3)
-    fig.tight_layout(); fig.savefig(out_dir / "occupancy_drift.png", dpi=150)
+    ax.legend(fontsize=8, loc="upper left")
+    fig.tight_layout(); save_figure(fig, out_dir / "occupancy_drift.jpeg", dpi=150)
     plt.close(fig)
 
 
 def plot_combined(per_ds, out_path):
     fig, ax = plt.subplots(figsize=(11, 6))
-    colors = {"1mp": "tab:blue", "1lc": "tab:red", "2lc": "tab:orange", "2mp": "tab:cyan", "3mp": "tab:purple"}
+    colors = cohort_colors(per_ds.keys())
     floor_top = max(df["floor95"].max() for df, *_ in per_ds.values())
     ax.axhspan(0, floor_top, color="grey", alpha=0.18,
                label=f"sampling-noise floor (<= {floor_top:.3f})")
 
     for ds, (df, k, used, rho, p) in per_ds.items():
         reg = df[~df["variant"]]
-        c = colors.get(ds, None)
+        c = colors[ds]                      # every dataset gets a cohort shade
         tag = "MitoPark" if "mp" in ds.lower() else "control"
         ax.plot(reg["week_num"], reg["drift_js"], "o-", color=c,
                 label=f"{ds} ({tag}); rho={rho:.2f}, p={p:.2g}")
@@ -169,8 +170,8 @@ def plot_combined(per_ds, out_path):
     ax.set_ylim(bottom=0)
     ax.set_title("Within-mouse occupancy drift across weeks\n"
                  "(diamonds = L-DOPA, triangles = saline; each mouse vs its own baseline)")
-    ax.legend(fontsize=8, loc="upper left"); ax.grid(alpha=0.3)
-    fig.tight_layout(); fig.savefig(out_path, dpi=150)
+    ax.legend(fontsize=8, loc="upper left")
+    fig.tight_layout(); save_figure(fig, out_path, dpi=150)
     plt.close(fig)
 
 
@@ -213,9 +214,9 @@ def main():
     if all_df:
         pd.concat(all_df, ignore_index=True).to_csv(
             args.data_root / "occupancy_drift_summary.csv", index=False)
-        plot_combined(per_ds, args.data_root / "occupancy_drift_combined.png")
+        plot_combined(per_ds, args.data_root / "occupancy_drift_combined.jpeg")
         print(f"\nWrote {args.data_root / 'occupancy_drift_summary.csv'} and "
-              f"{args.data_root / 'occupancy_drift_combined.png'}")
+              f"{args.data_root / 'occupancy_drift_combined.jpeg'}")
 
 
 if __name__ == "__main__":

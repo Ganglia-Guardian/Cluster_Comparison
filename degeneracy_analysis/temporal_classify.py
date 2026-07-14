@@ -18,7 +18,8 @@ Part 2 -- feature grouping + merge:
 
 Plot -- sectioned heatmap: rows=clusters (color = row-normalized weekly presence,
   so temporal SHAPE shows), sectioned by final category, within-section ordered by
-  centroid; left strip = feature-group id; merged rows flagged red.
+  centroid; left strip = the cluster's mean TBA magnitude (see TBA_COLOR_MODE);
+  merged rows flagged red.
 
 Run (after presence_similarity.py + feature_similarity.py):
     C:/ProgramData/anaconda3/python.exe degeneracy_analysis/temporal_classify.py
@@ -36,6 +37,7 @@ from sklearn.cluster import AgglomerativeClustering
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from feature_extraction import load_funct_features, bin_features, FEATURE_NAMES
+from utils import save_figure
 from feature_similarity import _row_labels
 from presence_similarity import MICE, OUT, DATA, MIN_COUNT, load_counts
 
@@ -49,14 +51,16 @@ CAT_RANK = {c: i for i, c in enumerate(SECTION_ORDER)}
 CAT_COLORS = {"early": "#d62728", "mid": "#ff7f0e", "late": "#1f77b4",
               "sustained": "#2ca02c", "uncategorized": "#bbbbbb"}
 
-# rest strip decomposes movement into translational (TBA) vs rotational (gyro):
-# 0 white = hi TBA & hi gyro (vigorous mixed); 1 green = hi TBA & lo gyro
-# (translational); 2 red = lo TBA & hi gyro (rotational, rare); 3 navy = lo both
-# (immobile). Order matches the code produced in analyze().
-MOVE_COLORS = ["#ffffff", "#2ca02c", "#d62728", "#11224a"]
-MOVE_LABELS = ["hiTBA hiGyro (vigorous)", "hiTBA loGyro (translational)",
-               "loTBA hiGyro (rotational)", "loTBA loGyro (immobile)"]
 MOVE_TYPES = np.array(["vigorous", "translational", "rotational", "immobile"])
+
+# The heatmaps' left strip shows each cluster's mean TBA magnitude, drawn one of
+# two ways:
+#   "continuous"  the magnitude itself on viridis (dark = low TBA, yellow = high)
+#                 -- keeps the gradient, at the cost of a harder-to-eyeball cutoff
+#   "categorical" light/dark split on whether the mean sits below/above
+#                 RESTING_TBA -- reads as a binary low/high-vigour mask
+TBA_COLOR_MODE = "continuous"
+TBA_CAT_COLORS = ["#e6e6e6", "#2f3b4c"]        # light = low TBA, dark = high TBA
 
 
 def rest_code(TBA, gyro):
@@ -179,21 +183,81 @@ def _save_detail_csv(mouse, clusters, labels, TBA):
     return path
 
 
-def _rest_strip(axr, code, ro):
-    axr.imshow(code[ro][:, None], aspect="auto", vmin=-0.5, vmax=3.5,
-               cmap=ListedColormap(MOVE_COLORS))
-    axr.set(xticks=[], yticks=[], title="T·G")
-    axr.title.set_fontsize(7)
+def _ink_on(bg):
+    """'black' or 'white', whichever stays legible on the background ``bg``.
+
+    Uses the WCAG relative luminance and its black/white crossover (~0.179), so
+    the choice tracks perceived brightness rather than a raw RGB average.
+    """
+    def channel(c):
+        return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+    r, g, b = (channel(c) for c in bg[:3])
+    return "black" if 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.179 else "white"
 
 
-def _move_legend(fig):
-    fig.legend(handles=[Patch(facecolor=MOVE_COLORS[i], edgecolor="0.3",
-                              label=MOVE_LABELS[i]) for i in range(4)],
-               loc="lower center", bbox_to_anchor=(0.5, -0.01), ncol=2,
-               fontsize=6, title="rest strip = TBA × gyro", title_fontsize=7)
+def _label_ink(ax, ro, merged, bg_colors):
+    """Colour the cluster-number y-labels, which are drawn over the strip to the
+    axis's left: black or white per that row's background, except merged rows,
+    which stay bold red (the titles call them out as evolution candidates)."""
+    for tick, i, bg in zip(ax.get_yticklabels(), ro, bg_colors):
+        if merged[i]:
+            tick.set_color("red")
+            tick.set_fontweight("bold")
+        else:
+            tick.set_color(_ink_on(bg))
 
 
-def _section_heatmap(mouse, P, weeks, clusters, labels, groups, merged, code, path, title):
+def _tba_strip(axt, TBA, ro, mode=TBA_COLOR_MODE):
+    """Draw the per-cluster mean-TBA strip.
+
+    Returns ``(im, row_colors)``: ``im`` is the image in "continuous" mode (the
+    caller needs it for a colorbar) and None in "categorical" mode; ``row_colors``
+    is the strip's colour per row, for labels drawn on top of it.
+    """
+    vals = np.asarray(TBA, float)[ro][:, None]
+    if mode == "categorical":
+        codes = (vals > RESTING_TBA).astype(int)
+        axt.imshow(codes, aspect="auto",
+                   vmin=-0.5, vmax=1.5, cmap=ListedColormap(TBA_CAT_COLORS))
+        im = None
+        row_colors = [to_rgb(TBA_CAT_COLORS[c]) for c in codes.ravel()]
+    elif mode == "continuous":
+        # viridis runs dark (low TBA) -> yellow (high TBA)
+        im = axt.imshow(vals, aspect="auto", cmap="viridis")
+        row_colors = [im.cmap(im.norm(v)) for v in vals.ravel()]
+    else:
+        raise ValueError("TBA_COLOR_MODE must be 'categorical' or 'continuous', "
+                         f"got {mode!r}")
+    axt.set(xticks=[], yticks=[], title="TBA")
+    axt.title.set_fontsize(7)
+    return im, row_colors
+
+
+def _tba_legend(fig, ax, im, mode):
+    """Key for the TBA strip: a light/dark patch pair, or a viridis colorbar.
+
+    ``ax`` must be the wide heatmap axis, never the strip: a colorbar steals room
+    from whatever it is attached to, and hanging it off the strip squeezes that
+    strip to a sliver -- which strands the cluster labels on white and makes the
+    contrast ink in ``_label_ink`` pick against a background that isn't there.
+    """
+    if mode == "categorical":
+        labels = [f"low (<= {RESTING_TBA})", f"high (> {RESTING_TBA})"]
+        fig.legend(handles=[Patch(facecolor=TBA_CAT_COLORS[i], edgecolor="0.3",
+                                  label=labels[i]) for i in range(2)],
+                   loc="lower center", bbox_to_anchor=(0.5, -0.01), ncol=2,
+                   fontsize=6, title="mean TBA", title_fontsize=7)
+    else:
+        # pad has to clear the section names printed just right of the heatmap;
+        # attach to `ax` (never the strip) so only ax narrows and the strip stays
+        # row-aligned with it.
+        cb = fig.colorbar(im, ax=ax, location="right", pad=0.14, shrink=0.35)
+        cb.set_label("mean TBA", fontsize=7)
+        cb.ax.tick_params(labelsize=6)
+
+
+def _section_heatmap(mouse, P, weeks, clusters, labels, merged, TBA, path, title,
+                     tba_mode=TBA_COLOR_MODE):
     disp = P / P.max(axis=1, keepdims=True)          # row-max norm -> shape visible
     cen = P @ weeks
 
@@ -208,39 +272,35 @@ def _section_heatmap(mouse, P, weeks, clusters, labels, groups, merged, code, pa
         bounds.append(len(row_order))
     ro = np.array(row_order)
 
-    fig, (axr, axg, ax) = plt.subplots(
-        1, 3, figsize=(8.9, max(6, len(ro) * 0.11)),
-        gridspec_kw={"width_ratios": [0.035, 0.05, 1], "wspace": 0.02})
-    _rest_strip(axr, code, ro)
-
-    # feature-group strip (recolor group ids to a compact cyclic palette)
-    uniq = {g: i for i, g in enumerate(np.unique(groups))}
-    gstrip = np.array([uniq[groups[i]] for i in ro])[:, None]
-    axg.imshow(gstrip % 20, aspect="auto", cmap="tab20")
-    axg.set(xticks=[], yticks=[], title="grp")
-    axg.title.set_fontsize(7)
+    fig, (axr, ax) = plt.subplots(
+        1, 2, figsize=(8.9, max(6, len(ro) * 0.11)),
+        gridspec_kw={"width_ratios": [0.035, 1], "wspace": 0.02})
+    imt, strip_colors = _tba_strip(axr, TBA, ro, tba_mode)
 
     im = ax.imshow(disp[ro], aspect="auto", cmap="magma", interpolation="nearest")
     ax.set_xticks(range(0, len(weeks), 2))
     ax.set_xticklabels(weeks[::2])
     ax.set_yticks(range(len(ro)))
     ax.set_yticklabels(clusters[ro], fontsize=5)
-    for tick, i in zip(ax.get_yticklabels(), ro):
-        if merged[i]:
-            tick.set_color("red")
-            tick.set_fontweight("bold")
+    _label_ink(ax, ro, merged, strip_colors)      # labels sit on the TBA strip
     for b in bounds[:-1]:
         ax.axhline(b - 0.5, color="cyan", lw=1.2)
     for c, yc in ypos:
-        ax.text(len(weeks) + 0.6, yc, c, va="center", fontsize=8, rotation=90)
+        # x in axes fraction, y in data (row) coords: pins the section name just
+        # past the right edge whatever the week count. In data coords the offset
+        # would scale with the number of weeks and, on a short cohort, run into
+        # the colorbar.
+        ax.text(1.01, yc, c, transform=ax.get_yaxis_transform(),
+                va="center", fontsize=8, rotation=90)
     ax.set(xlabel="week", title=title)
     fig.colorbar(im, ax=ax, label="presence (row-max normalized)", pad=0.12, shrink=0.6)
-    _move_legend(fig)
-    fig.savefig(path, dpi=130, bbox_inches="tight")
+    _tba_legend(fig, ax, imt, tba_mode)
+    save_figure(fig, path, dpi=130, bbox_inches="tight")
     plt.close(fig)
 
 
-def _group_heatmap(mouse, P, weeks, clusters, final, groups, merged, code, path, title):
+def _group_heatmap(mouse, P, weeks, clusters, final, groups, merged, TBA, path, title,
+                   tba_mode=TBA_COLOR_MODE):
     """Rows sectioned by feature-group (multi-member first, ordered by dominant
     category), within-group ordered early->mid->late->sustained, then a singleton
     block. Left strip = temporal category color -> a coherent group is one color."""
@@ -281,7 +341,7 @@ def _group_heatmap(mouse, P, weeks, clusters, final, groups, merged, code, path,
     fig, (axr, axc, ax) = plt.subplots(
         1, 3, figsize=(8.9, max(6, len(ro) * 0.12)),
         gridspec_kw={"width_ratios": [0.035, 0.045, 1], "wspace": 0.02})
-    _rest_strip(axr, code, ro)
+    imt, _ = _tba_strip(axr, TBA, ro, tba_mode)
     axc.imshow(strip, aspect="auto")
     axc.set(xticks=[], yticks=[], title="cat")
     axc.title.set_fontsize(7)
@@ -291,20 +351,19 @@ def _group_heatmap(mouse, P, weeks, clusters, final, groups, merged, code, path,
     ax.set_xticklabels(weeks[::2])
     ax.set_yticks(range(len(ro)))
     ax.set_yticklabels(clusters[ro], fontsize=5)
-    for tick, i in zip(ax.get_yticklabels(), ro):
-        if merged[i]:
-            tick.set_color("red")
-            tick.set_fontweight("bold")
+    # here the category strip, not the TBA strip, is what sits under the labels
+    _label_ink(ax, ro, merged, [to_rgb(CAT_COLORS[final[i]]) for i in ro])
     for _, _, end in sections[:-1]:
         ax.axhline(end - 0.5, color="cyan", lw=0.8)
     for lab, center, _ in sections:
-        ax.text(len(weeks) + 0.4, center, lab, va="center", fontsize=6)
+        ax.text(1.01, center, lab, transform=ax.get_yaxis_transform(),
+                va="center", fontsize=6)          # axes-fraction x: week-count safe
     ax.set(xlabel="week", title=title)
     ax.legend(handles=[Patch(color=CAT_COLORS[c], label=c) for c in SECTION_ORDER],
               bbox_to_anchor=(1.16, 1), loc="upper left", fontsize=6, title="category")
     fig.colorbar(im, ax=ax, label="presence (row-max normalized)", pad=0.22, shrink=0.5)
-    _move_legend(fig)
-    fig.savefig(path, dpi=130, bbox_inches="tight")
+    _tba_legend(fig, ax, imt, tba_mode)
+    save_figure(fig, path, dpi=130, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -365,14 +424,14 @@ def analyze(mouse):
 
     grp = "control" if mouse.endswith("lc") else "MitoPark"
     noflag = np.zeros(len(clusters), bool)
-    _section_heatmap(mouse, P, weeks, clusters, labels, groups, noflag, code,
-                     f"{OUT}/{mouse}/temporal_classes.png",
+    _section_heatmap(mouse, P, weeks, clusters, labels, noflag, func["TBA"],
+                     f"{OUT}/{mouse}/temporal_classes.jpeg",
                      f"{mouse} ({grp}): temporal classes (individual)")
-    _section_heatmap(mouse, P, weeks, clusters, final, groups, changed, code,
-                     f"{OUT}/{mouse}/temporal_classes_merged.png",
+    _section_heatmap(mouse, P, weeks, clusters, final, changed, func["TBA"],
+                     f"{OUT}/{mouse}/temporal_classes_merged.jpeg",
                      f"{mouse} ({grp}): pooled-family reclassify (red label = evolution candidate)")
-    _group_heatmap(mouse, P, weeks, clusters, labels, groups, changed, code,
-                   f"{OUT}/{mouse}/temporal_by_group.png",
+    _group_heatmap(mouse, P, weeks, clusters, labels, groups, changed, func["TBA"],
+                   f"{OUT}/{mouse}/temporal_by_group.jpeg",
                    f"{mouse} ({grp}): rows by feature-group (red label = evolution candidate)")
 
     def counts(lab):

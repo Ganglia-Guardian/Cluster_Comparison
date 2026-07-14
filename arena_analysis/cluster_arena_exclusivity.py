@@ -37,6 +37,7 @@ Run:
 """
 import argparse
 import re
+import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -44,6 +45,9 @@ import numpy as np
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(ROOT.parent))
+from utils import save_figure          # noqa: E402
+
 DATA = ROOT / "data"
 OUT = ROOT / "output" / "exclusivity"
 _ARENA_LABEL = re.compile(r"(\d+(?:mp|lc)[a-z0-9_]*)_arena_compare", re.I)
@@ -175,7 +179,7 @@ def plot_batch(tbl, title, path, excl, shared):
     ax.legend(handles, VERDICT_COLORS.keys(), ncol=4, fontsize=8,
               loc="upper left", framealpha=0.9)
     fig.tight_layout()
-    fig.savefig(path, dpi=140)
+    save_figure(fig, path, dpi=140)
     plt.close(fig)
 
 
@@ -201,7 +205,7 @@ def main():
             tbl.insert(0, "mouse", mouse)
             per_cluster.append(tbl)
             plot_batch(tbl, f"{mouse} {batch}  (MATLAB)",
-                       OUT / f"{mouse}_{batch}_occupancy.png", args.excl, args.shared)
+                       OUT / f"{mouse}_{batch}_occupancy.jpeg", args.excl, args.shared)
 
             # frame-share + cluster-count by verdict
             vc = tbl["verdict"].value_counts()
@@ -231,7 +235,7 @@ def main():
            title="Arena exclusivity of clusters (MATLAB), by mouse/batch")
     ax.legend(ncol=4, fontsize=8, loc="lower center", bbox_to_anchor=(0.5, 1.02))
     fig.tight_layout()
-    fig.savefig(OUT / "verdict_summary.png", dpi=140)
+    save_figure(fig, OUT / "verdict_summary.jpeg", dpi=140)
     plt.close(fig)
 
     print(f"\nWrote {OUT}/cluster_verdicts.csv, verdict_summary.csv, and plots")

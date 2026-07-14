@@ -20,6 +20,7 @@ Run:
     uv run python arena_analysis/plot_stitched_weeks.py --view clustertype --mode all_bins
 """
 import argparse
+import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -29,6 +30,9 @@ from matplotlib.lines import Line2D
 from scipy.stats import spearmanr
 
 ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(ROOT.parent))
+from utils import save_figure          # noqa: E402
+
 OUT = ROOT / "output" / "stitched_weeks"
 BATCH_MARKER = {"w8": "o", "w9": "s", "w10": "^"}
 STYLE = {  # group label -> (colour, linestyle)
@@ -71,7 +75,6 @@ def panel(ax, df, gcol, value, ylabel, title):
             ax.scatter(bb["week"], bb[value], marker=mk, color=color, s=38,
                        zorder=2, edgecolors="white", linewidths=0.5)
     ax.set(xlabel="disease week", ylabel=ylabel, title=title)
-    ax.grid(alpha=0.3)
 
 
 def main():
@@ -118,8 +121,8 @@ def main():
         fig.suptitle(f"{mouse}: stitched w8->w24 transition trajectory  [{tag}]{ex}", y=1.0)
         fig.tight_layout()
         suffix = f"_excl-{'-'.join(map(str, sorted(drop)))}" if drop else ""
-        path = OUT / f"{mouse}_{tag}{suffix}.png"
-        fig.savefig(path, dpi=140, bbox_inches="tight")
+        path = OUT / f"{mouse}_{tag}{suffix}.jpeg"
+        save_figure(fig, path, dpi=140, bbox_inches="tight")
         plt.close(fig)
         weeks = sorted(fan_m["week"].unique())
         print(f"  {mouse}: weeks {weeks[0]}-{weeks[-1]} ({len(weeks)} pts){ex} -> {path}")

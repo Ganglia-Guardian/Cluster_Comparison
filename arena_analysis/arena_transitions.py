@@ -34,6 +34,7 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT.parent))
 from cluster_transition_compare import fanout_by_week           # noqa: E402
 from cluster_successor_diversity import rarefied_diversity      # noqa: E402
+from utils import save_figure                                   # noqa: E402
 
 from cluster_arena_exclusivity import (BATCHES, MICE, mat_csv,  # noqa: E402
                                        parse_segment)
@@ -107,7 +108,7 @@ def main():
                                 "fanout_rho": fr, "fanout_p": fp,
                                 "richness_rho": rr, "richness_p": rp})
             plot_dataset(fan_arena, rich_arena, f"{mouse} {batch}",
-                         OUT / f"{mouse}_{batch}_transitions.png")
+                         OUT / f"{mouse}_{batch}_transitions.jpeg")
             print(f"  {mouse}/{batch}: fan-out/diversity computed for both arenas")
 
     pd.DataFrame(fan_rows).to_csv(OUT / "fanout_by_arena.csv", index=False)
@@ -136,9 +137,9 @@ def plot_dataset(fan_arena, rich_arena, title, path):
     axes[1].set(xlabel="disease week", ylabel="median rarefied richness",
                 title="Successor richness by week (rarefied)")
     for ax in axes:
-        ax.grid(alpha=0.3); ax.legend(title="arena  (2D dashed, 3D solid)")
+        ax.legend(title="arena  (2D dashed, 3D solid)")
     fig.suptitle(title, y=1.0)
-    fig.tight_layout(); fig.savefig(path, dpi=140, bbox_inches="tight"); plt.close(fig)
+    fig.tight_layout(); save_figure(fig, path, dpi=140, bbox_inches="tight"); plt.close(fig)
 
 
 if __name__ == "__main__":

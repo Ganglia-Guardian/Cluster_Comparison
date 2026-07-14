@@ -31,14 +31,15 @@ Flat-corner transitions are discarded: both endpoints on the SAME flat plateau
 (both ~0.41 m or both ~0.60 m) is flat-corner wandering and only inflates the 0 bin.
 
 Outputs (elevation_analysis/output/), for each metric:
-  <metric>_distribution.png  - per-mouse distribution over all weeks combined
-  <metric>_weekly_trend.png  - weekly-mean per mouse, Spearman rho/p legend,
-                               lc mice dashed, mp mice solid.
+  <metric>_distribution.jpeg  - per-mouse distribution over all weeks combined
+  <metric>_weekly_trend.jpeg  - weekly-mean per mouse, Spearman rho/p legend,
+                                lc mice orange, mp mice green.
 """
 
 import argparse
 import os
 import re
+import sys
 import numpy as np
 import pandas as pd
 import matplotlib
@@ -47,7 +48,10 @@ import matplotlib.pyplot as plt
 from scipy.spatial import cKDTree
 from scipy.stats import spearmanr
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import deproject_centroids as dc
+from utils import cohort_colors, save_figure
 
 # --------------------------------------------------------------------------- #
 ELEV_NAME   = "5-30-hi-complex-1-points.csv"   # elevation file expected under data-root
@@ -57,11 +61,11 @@ ZERO_DZ     = 0.005          # |dz| below this = a 0-slope (equal-height) transi
 PLATEAUS    = (0.41, 0.60)   # flat-corner plateau heights (m) to discard
 PLATEAU_TOL = 0.02           # a column is "on" a plateau if within this of its height
 
-# group is inferred from the folder name: *lc = littermate control (dashed),
-# *m(ito)?p = MitoPark (solid). Filled at runtime by discover_mice().
+# group is inferred from the folder name: *lc = littermate control (orange),
+# *m(ito)?p = MitoPark (green). Filled at runtime by discover_mice().
 GROUP_PATTERNS = [("lc", re.compile(r"lc$", re.I)),
                   ("mp", re.compile(r"m(ito)?p$", re.I))]
-COLORS = {}                  # label -> color, assigned in main() for the selected mice
+COLORS = {}                  # label -> UTD cohort shade, assigned in main()
 
 METRICS = [
     ("slope", "transition slope  |dz|/dist"),
@@ -190,9 +194,8 @@ def plot_distributions(per_mouse, metric, label, out_path, xmax):
 
     ax = axes[5]
     for name, grp, tr in per_mouse:
-        ls = "--" if grp == "lc" else "-"
         h, e = np.histogram(tr[metric], bins=bins, density=True)
-        ax.plot(0.5 * (e[:-1] + e[1:]), h, ls, color=COLORS[name], label=f"{name} ({grp})")
+        ax.plot(0.5 * (e[:-1] + e[1:]), h, "-", color=COLORS[name], label=f"{name} ({grp})")
     ax.set_title("all mice overlaid")
     ax.set_xlabel(label)
     ax.set_ylabel("density")
@@ -202,7 +205,7 @@ def plot_distributions(per_mouse, metric, label, out_path, xmax):
     fig.suptitle(f"Elevation-bin {label} distribution  (all weeks combined; "
                  f"jitter-debounced, flat-corner transitions removed)", fontsize=14)
     fig.tight_layout(rect=[0, 0, 1, 0.96])
-    fig.savefig(out_path, dpi=130)
+    save_figure(fig, out_path, dpi=130)
     plt.close(fig)
     print("wrote", out_path)
 
@@ -213,18 +216,16 @@ def plot_weekly_trend(per_mouse, metric, label, out_path):
         wk = tr.groupby("week")[metric].mean().sort_index()
         weeks, means = wk.index.values, wk.values
         rho, p = spearmanr(weeks, means) if len(weeks) > 2 else (np.nan, np.nan)
-        ls = "--" if grp == "lc" else "-"
-        ax.plot(weeks, means, ls, marker="o", color=COLORS[name],
+        ax.plot(weeks, means, "-", marker="o", color=COLORS[name],
                 label=f"{name} ({grp})  rho={rho:+.2f}, p={p:.3f}")
 
     ax.set_xlabel("week")
     ax.set_ylabel("mean " + label)
     ax.set_title(f"Weekly-mean elevation-bin {label} per mouse\n"
-                 "(lc dashed, mp solid; Spearman trend of weekly mean vs week)")
+                 "(lc orange, mp green; Spearman trend of weekly mean vs week)")
     ax.legend(fontsize=10)
-    ax.grid(alpha=0.3)
     fig.tight_layout()
-    fig.savefig(out_path, dpi=130)
+    save_figure(fig, out_path, dpi=130)
     plt.close(fig)
     print("wrote", out_path)
 
@@ -240,8 +241,7 @@ def plot_weekly_count(per_mouse, frames_by, out_path, normalize, kind="transitio
             minutes = frames_by[name].reindex(weeks).values / FPS / 60.0
             y = y / minutes
         rho, p = spearmanr(weeks, y) if len(weeks) > 2 else (np.nan, np.nan)
-        ls = "--" if grp == "lc" else "-"
-        ax.plot(weeks, y, ls, marker="o", color=COLORS[name],
+        ax.plot(weeks, y, "-", marker="o", color=COLORS[name],
                 label=f"{name} ({grp})  rho={rho:+.2f}, p={p:.3f}")
 
     ylab = f"{kind} per minute" if normalize else f"number of {kind} transitions"
@@ -249,11 +249,10 @@ def plot_weekly_count(per_mouse, frames_by, out_path, normalize, kind="transitio
     ax.set_xlabel("week")
     ax.set_ylabel(ylab)
     ax.set_title(f"Weekly elevation-bin {kind} {ttl} per mouse\n"
-                 "(lc dashed, mp solid; Spearman trend vs week)")
+                 "(lc orange, mp green; Spearman trend vs week)")
     ax.legend(fontsize=10)
-    ax.grid(alpha=0.3)
     fig.tight_layout()
-    fig.savefig(out_path, dpi=130)
+    save_figure(fig, out_path, dpi=130)
     plt.close(fig)
     print("wrote", out_path)
 
@@ -296,8 +295,7 @@ def main():
         mice = [m for m in mice if m[0] in sel or m[1] in sel]
     if not mice:
         raise SystemExit(f"no matching mice found under {data_root}")
-    cmap = plt.get_cmap("tab10")
-    COLORS.update({name: cmap(i % 10) for i, (name, _, _) in enumerate(mice)})
+    COLORS.update(cohort_colors([name for name, _, _ in mice]))
     print("mice:", ", ".join(f"{n}({g})" for n, _, g in mice))
 
     os.makedirs(out, exist_ok=True)
@@ -330,26 +328,26 @@ def main():
 
     # movement plots: meaningful in both modes
     plot_weekly_count(per_mouse, frames_by,
-                      os.path.join(out, "transition_count_weekly.png"), normalize=False)
+                      os.path.join(out, "transition_count_weekly.jpeg"), normalize=False)
     plot_weekly_count(per_mouse, frames_by,
-                      os.path.join(out, "transition_rate_weekly.png"), normalize=True)
+                      os.path.join(out, "transition_rate_weekly.jpeg"), normalize=True)
 
     if args.open_field:
         return   # everything below is elevation-based; degenerate on a flat arena
 
     plot_weekly_count(per_mouse_zero, frames_by,
-                      os.path.join(out, "zero_slope_count_weekly.png"),
+                      os.path.join(out, "zero_slope_count_weekly.jpeg"),
                       normalize=False, kind="0-slope (equal-height, incl. plateaus)")
     plot_weekly_count(per_mouse_zero, frames_by,
-                      os.path.join(out, "zero_slope_rate_weekly.png"),
+                      os.path.join(out, "zero_slope_rate_weekly.jpeg"),
                       normalize=True, kind="0-slope (equal-height, incl. plateaus)")
 
     for metric, label in METRICS:
         xmax = np.percentile(np.concatenate([t[metric].values for _, _, t in per_mouse]), 99)
         plot_distributions(per_mouse, metric, label,
-                           os.path.join(out, f"{metric}_distribution.png"), xmax)
+                           os.path.join(out, f"{metric}_distribution.jpeg"), xmax)
         plot_weekly_trend(per_mouse, metric, label,
-                          os.path.join(out, f"{metric}_weekly_trend.png"))
+                          os.path.join(out, f"{metric}_weekly_trend.jpeg"))
 
 
 if __name__ == "__main__":

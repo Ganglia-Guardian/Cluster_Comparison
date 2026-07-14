@@ -28,10 +28,10 @@ different codebook sizes too.
 
 Outputs per dataset (data/<ds>/):
     successor_diversity.csv             week, source, richness, perplexity (rarefied)
-    successor_richness_ridgeline.png    per-week distribution of rarefied richness
-    successor_perplexity_ridgeline.png  per-week distribution of effective successors
+    successor_richness_ridgeline.jpeg   per-week distribution of rarefied richness
+    successor_perplexity_ridgeline.jpeg per-week distribution of effective successors
 Combined (data/):
-    successor_diversity_over_time.png   median / spread / bimodality of the richness
+    successor_diversity_over_time.jpeg  median / spread / bimodality of the richness
                                         distribution vs week, all datasets overlaid,
                                         to test the "splits into two modes" hypothesis.
 
@@ -44,7 +44,7 @@ Run:
 
 The --arena {both,open,3d} flag selects open-field (*_open), 3d/high-tier
 (everything else), or both (default); subset runs write a suffixed summary
-(successor_diversity_over_time_{open,3d}.png) so the 'both' plot is preserved.
+(successor_diversity_over_time_{open,3d}.jpeg) so the 'both' plot is preserved.
 """
 
 import argparse
@@ -62,6 +62,7 @@ from cluster_transition_compare import (DATA_ROOT, DEFAULT_DATASETS,
                                         MIN_FRAME_FRAC, cohort, load,
                                         progression_frames, set_data_root)
 from cluster_transition_labels import build_transitions, is_variant, week_sort_key
+from utils import cohort_colors, save_figure
 
 DEPTH = 20    # rarefaction depth: each cluster subsampled to this many transitions
 REPS = 100    # subsample draws averaged per cluster
@@ -202,7 +203,7 @@ def plot_ridgeline(res, metric, name, depth, out_path):
     ax.set_title(f"{name}: per-cluster {metric} distribution by week\n"
                  f"(rarefied to {depth} transitions/cluster; tick = weekly median)")
     fig.tight_layout()
-    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    save_figure(fig, out_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
     return out_path
 
@@ -221,18 +222,20 @@ def _legend_order_key(name):
 
 
 def plot_summary(per_dataset, depth, out_path):
-    """Median rarefied-richness vs week, every dataset overlaid, with a cluster-
-    bootstrap 95% CI band. The saline (triangle) and L-DOPA (diamond) week-24
-    challenge arms are drawn after the last week -- same colour per dataset, not
-    line-connected, each with its own bootstrap CI. Legend sorted *lc then *mp,
-    ascending. (Spread/IQR and bimodality were checked before and showed no
-    correlation, so only the median is plotted.)"""
-    cmap = plt.get_cmap("tab10")
+    """Median rarefied-richness vs week, every dataset overlaid in its UTD cohort
+    shade (orange = control, green = MitoPark). No CI band: with every line a
+    shade of the same two hues, translucent bands smear together and bury the
+    medians. The saline (triangle) and L-DOPA (diamond) week-24 challenge arms are
+    drawn after the last week -- same colour per dataset, not line-connected, each
+    with its own bootstrap CI (isolated markers, so those don't overlap). Legend
+    sorted *lc then *mp, ascending. (Spread/IQR and bimodality were checked before
+    and showed no correlation, so only the median is plotted.)"""
     rng = np.random.default_rng(0)
     ordered = sorted((d for d in per_dataset if not d[1].empty),
                      key=lambda d: _legend_order_key(d[0]))
     if not ordered:
         return out_path
+    colors = cohort_colors([name for name, _, _ in ordered])
     weeks_all = sorted({int(w) for _, res, _ in ordered for w in res["wn"].unique()})
     wmax = weeks_all[-1]
 
@@ -250,21 +253,14 @@ def plot_summary(per_dataset, depth, out_path):
              for j, (arm, mk, _lab) in enumerate(present_arms)}
 
     fig, ax = plt.subplots(figsize=(9.5, 6))
-    for i, (name, res, variants) in enumerate(ordered):
-        color = cmap(i % 10)
-        style = "--" if cohort(name) == "lc" else "-"
+    for name, res, variants in ordered:
+        color = colors[name]
         weeks = sorted(res["wn"].unique())
-        med, lo, hi = [], [], []
-        for w in weeks:
-            vals = res.loc[res.wn == w, "richness"].to_numpy()
-            med.append(np.median(vals))
-            l, h = boot_median_ci(vals, rng)
-            lo.append(l); hi.append(h)
-        med, lo, hi = np.array(med), np.array(lo), np.array(hi)
+        med = np.array([np.median(res.loc[res.wn == w, "richness"].to_numpy())
+                        for w in weeks])
         ok = ~np.isnan(med)
         rho, p = spearmanr(np.array(weeks)[ok], med[ok]) if ok.sum() > 2 else (np.nan, np.nan)
-        ax.fill_between(weeks, lo, hi, color=color, alpha=0.15, lw=0)
-        ax.plot(weeks, med, style, marker="o", ms=4, color=color,
+        ax.plot(weeks, med, "-", marker="o", ms=4, color=color,
                 label=f"{name}: rho={rho:.2f}, p={p:.3f}")
         # week-24 challenge arms: standalone markers + bootstrap CI, no connecting line
         for arm, (xpos, mk) in arm_x.items():
@@ -293,9 +289,8 @@ def plot_summary(per_dataset, depth, out_path):
                   else "disease week")
     ax.set_ylabel("median rarefied successor richness")
     ax.set_title(f"Median rarefied successor richness over disease "
-                 f"(rarefied to {depth}; shaded = bootstrap 95% CI)\n"
-                 f"dashed = control (lc), solid = MitoPark (mp)")
-    ax.grid(alpha=0.3)
+                 f"(rarefied to {depth})\n"
+                 f"orange = control (lc), green = MitoPark (mp)")
     leg1 = ax.legend(fontsize=8, loc="upper left", bbox_to_anchor=(1.02, 1),
                      title=f"dataset:  Spearman rho (weeks {weeks_all[0]}-{wmax})")
     ax.add_artist(leg1)
@@ -310,7 +305,7 @@ def plot_summary(per_dataset, depth, out_path):
         leg2 = ax.legend(handles=shape_handles, fontsize=8, loc="lower left",
                          title="wk24 challenge")
         ax.add_artist(leg2)
-    fig.savefig(out_path, dpi=150, bbox_inches="tight", bbox_extra_artists=extra)
+    save_figure(fig, out_path, dpi=150, bbox_inches="tight", bbox_extra_artists=extra)
     plt.close(fig)
     return out_path
 
@@ -355,7 +350,7 @@ def main():
               f"wrote {ds_dir / 'successor_diversity.csv'}")
         for metric in ("richness", "perplexity"):
             p = plot_ridgeline(res, metric, name, args.depth,
-                               ds_dir / f"successor_{metric}_ridgeline.png")
+                               ds_dir / f"successor_{metric}_ridgeline.jpeg")
             if p:
                 print(f"  wrote {p}")
         variants = variant_richness(df, args.depth)
@@ -364,7 +359,7 @@ def main():
     if per_dataset:
         suffix = "" if args.arena == "both" else f"_{args.arena}"
         p = plot_summary(per_dataset, args.depth,
-                         out_dir / f"successor_diversity_over_time{suffix}.png")
+                         out_dir / f"successor_diversity_over_time{suffix}.jpeg")
         print(f"Wrote {p}")
 
 

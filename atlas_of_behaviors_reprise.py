@@ -1,8 +1,12 @@
+import argparse
+
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
 from scipy.stats import chi2_contingency, ttest_1samp
 from pathlib import Path
+
+from utils import save_figure
 
 def analyze_cluster_types(path, df):
     is_3d = df["Folder_Name"].str.contains("arenaH|arenaL|arenaM", na=False)
@@ -44,7 +48,7 @@ def analyze_cluster_types(path, df):
     with open(path / "statistical_analysis.txt", "w") as f:
         f.write("\n".join(output))
 
-    sns.set_theme(style="whitegrid")
+    sns.set_theme(style="white")
     ax = sns.histplot(type_ratios["ratio_2d"], bins=20)
     ax.set(
         title="Distribution of 2D Ratios by Cluster",
@@ -53,15 +57,23 @@ def analyze_cluster_types(path, df):
     )
 
     plt.tight_layout()
-    plt.savefig(path / f"ratio_histogram_{path.name}.png", dpi=200)
+    save_figure(plt.gcf(), path / f"ratio_histogram_{path.name}.jpeg", dpi=200)
     plt.close()
 
     return type_ratios
 
 # Main analysis loop
 
-folder_path = Path("./data/")
-data_paths = [d for d in folder_path.iterdir() if d.is_dir()]
+parser = argparse.ArgumentParser(
+    description="2D/3D cluster-composition atlas over every mouse in a data root.")
+parser.add_argument("--data-root", type=Path, default=Path("./data/"),
+                    help="root holding the per-mouse folders (default: ./data)")
+folder_path = parser.parse_args().data_root
+
+# Only folders that actually hold the CSV, so a side folder (e.g. all_wt) is
+# skipped rather than crashing the run.
+data_paths = [d for d in sorted(folder_path.iterdir())
+              if d.is_dir() and (d / "Cluster_detail_results.csv").is_file()]
 df_collection = []
 per_folder_results = {}
 offset = 0
@@ -83,7 +95,7 @@ ax.set(
 )
 ax.legend(title="Dataset")
 plt.tight_layout()
-plt.savefig(folder_path / "ratio_ecdf_overlay.png", dpi=200)
+save_figure(plt.gcf(), folder_path / "ratio_ecdf_overlay.jpeg", dpi=200)
 plt.close()
 
 combined_df = pd.concat(df_collection, ignore_index=True)

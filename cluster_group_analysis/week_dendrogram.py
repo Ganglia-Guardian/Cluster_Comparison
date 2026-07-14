@@ -9,7 +9,7 @@ Clusters with < MIN_FRAMES frames that week are dropped (noisy centroids).
 
 For every (mouse, week) we z-score the 4 features within the week, Ward-link, cut
 into k branches, and draw the dendrogram with aligned occ3d + TBA strips
-(output/week_dendrogram/<mouse>/w<week>.png). We also collect per-week stats and
+(output/week_dendrogram/<mouse>/w<week>.jpeg). We also collect per-week stats and
 a single summary figure so the trajectory across weeks is visible without paging
 through every tree:
     - median TBA per week            (bradykinesia: MP should decline, LC flat)
@@ -20,6 +20,8 @@ Run:  uv run python cluster_group_analysis/week_dendrogram.py
       uv run python cluster_group_analysis/week_dendrogram.py --k 5 --min-frames 15
 """
 import argparse
+import sys
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -32,6 +34,9 @@ from common import ROOT
 from dendrogram import (OCC_CMAP, TBA_CMAP, _strip, cut_threshold,
                         relabel_by_leaf_order, zscore)
 from feature_extraction import FEATURE_NAMES
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # repo root
+from utils import save_figure  # noqa: E402
 
 OUT = ROOT / "output" / "week_dendrogram"
 TBA_LOW, OCC_2D = 0.15, 0.45      # absolute thresholds for the low-TBA / 2D group
@@ -71,7 +76,6 @@ def plot_week(sub, Z, leaves, k, title, path):
                above_threshold_color="#999999", no_labels=True)
     ax_d.set(ylabel="Ward dist", title=title)
     ax_d.tick_params(labelbottom=False)
-    ax_d.spines[["top", "right"]].set_visible(False)
 
     occ = sub["occ3d"].to_numpy(float)
     tba = sub["TotAccelBA"].to_numpy(float)
@@ -84,7 +88,7 @@ def plot_week(sub, Z, leaves, k, title, path):
     fig.colorbar(plt.cm.ScalarMappable(
         Normalize(np.nanmin(tba), np.nanmax(tba)), TBA_CMAP),
         cax=fig.add_subplot(gs[2, 1])).set_label("TBA", fontsize=7)
-    fig.savefig(path, dpi=140, bbox_inches="tight")
+    save_figure(fig, path, dpi=140, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -99,10 +103,9 @@ def summary_plot(st, path):
             ax.plot(g["week"], g[col], "-o", ms=4, color=MOUSE_COLORS.get(mouse),
                     label=mouse)
         ax.set(xlabel="week", ylabel=ylab, title=title)
-        ax.grid(alpha=0.3)
     axes[0].legend(title="mouse", fontsize=8)
     fig.tight_layout()
-    fig.savefig(path, dpi=140)
+    save_figure(fig, path, dpi=140)
     plt.close(fig)
 
 
@@ -134,7 +137,7 @@ def main():
         (OUT / mouse).mkdir(exist_ok=True)
         plot_week(sub, Z, leaves, k,
                   f"{mouse} week {week} ({batch}, {len(sub)} clusters -> {k} br.)",
-                  OUT / mouse / f"w{week:02d}.png")
+                  OUT / mouse / f"w{week:02d}.jpeg")
 
         low = sub[(sub["TotAccelBA"] < TBA_LOW) & (sub["occ3d"] < OCC_2D)]
         stats.append({
@@ -151,8 +154,8 @@ def main():
 
     st = pd.DataFrame(stats)
     st.to_csv(OUT / "week_stats.csv", index=False)
-    summary_plot(st, OUT / "summary.png")
-    print(f"\nWrote per-week trees under {OUT}/<mouse>/, week_stats.csv, summary.png")
+    summary_plot(st, OUT / "summary.jpeg")
+    print(f"\nWrote per-week trees under {OUT}/<mouse>/, week_stats.csv, summary.jpeg")
 
 
 if __name__ == "__main__":

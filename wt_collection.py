@@ -64,6 +64,8 @@ from scipy.cluster.hierarchy import dendrogram, linkage
 from scipy.spatial.distance import jensenshannon, squareform
 from scipy.stats import spearmanr
 
+from utils import save_figure
+
 DATA_ROOT = Path("data")
 DEFAULT_CSV = DATA_ROOT / "all_wt" / "wildtype_062425_labels.csv"
 OUT_DIRNAME = "wt_collection_out"
@@ -371,7 +373,7 @@ def plot_overview(time_occ, mice, per_cluster, summary, cos, js, masks, out_dir)
         f"(n={n_mice} mice, {summary['n_clusters_seen']}/{summary['n_clusters_total']} "
         f"clusters used)", fontsize=14)
     fig.tight_layout(rect=(0, 0, 1, 0.97))
-    fig.savefig(out_dir / "wt_collection_overview.png", dpi=150)
+    save_figure(fig, out_dir / "wt_collection_overview.jpeg", dpi=150)
     plt.close(fig)
 
 

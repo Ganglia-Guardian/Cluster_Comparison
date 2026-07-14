@@ -32,7 +32,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from utils import similarity_to_distance
+from utils import save_figure, similarity_to_distance
 from sklearn.metrics import silhouette_samples, silhouette_score
 
 DATA_DIR = Path("data/1mp")
@@ -172,7 +172,7 @@ def make_plots(result, per_bin, ranges, out_dir=OUT_DIR):
     _draw_silhouette(ax, weeks, x, y, valid)
     ax.set_xticks(x); ax.set_xticklabels(weeks, rotation=45, ha="right")
     ax.set_ylabel("mean silhouette"); ax.set_title("Silhouette score by week")
-    fig.tight_layout(); fig.savefig(out_dir / "silhouette_by_week.png", dpi=150)
+    fig.tight_layout(); save_figure(fig, out_dir / "silhouette_by_week.jpeg", dpi=150)
     plt.close(fig)
 
     # 2) number of clusters per week
@@ -180,7 +180,7 @@ def make_plots(result, per_bin, ranges, out_dir=OUT_DIR):
     ax.bar(x, result["n_clusters"], color="tab:orange")
     ax.set_xticks(x); ax.set_xticklabels(weeks, rotation=45, ha="right")
     ax.set_ylabel("n clusters"); ax.set_title("Number of clusters present by week")
-    fig.tight_layout(); fig.savefig(out_dir / "n_clusters_by_week.png", dpi=150)
+    fig.tight_layout(); save_figure(fig, out_dir / "n_clusters_by_week.jpeg", dpi=150)
     plt.close(fig)
 
     # 3) per-bin silhouette distribution by week (spread, not just the mean)
@@ -192,7 +192,7 @@ def make_plots(result, per_bin, ranges, out_dir=OUT_DIR):
     ax.set_xticks(x + 1); ax.set_xticklabels(weeks, rotation=45, ha="right")
     ax.set_ylabel("per-bin silhouette")
     ax.set_title("Distribution of per-bin silhouette by week")
-    fig.tight_layout(); fig.savefig(out_dir / "silhouette_distribution_by_week.png", dpi=150)
+    fig.tight_layout(); save_figure(fig, out_dir / "silhouette_distribution_by_week.jpeg", dpi=150)
     plt.close(fig)
 
     # combined overview
@@ -209,7 +209,7 @@ def make_plots(result, per_bin, ranges, out_dir=OUT_DIR):
         a.set_xticks(x); a.set_xticklabels(weeks, rotation=45, ha="right", fontsize=8)
     axes[1, 0].set_xticks(x + 1)
     axes[1, 0].set_xticklabels(weeks, rotation=45, ha="right", fontsize=8)
-    fig.tight_layout(); fig.savefig(out_dir / "overview.png", dpi=150)
+    fig.tight_layout(); save_figure(fig, out_dir / "overview.jpeg", dpi=150)
     plt.close(fig)
 
     print(f"Saved 4 plots to {out_dir}")
