@@ -11,10 +11,17 @@ resolution-markers = [
 ]
 
 [[package]]
+name = "antigravity"
+version = "0.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/07/9c/11a6803be0d87d8d408bd244917ad27556d78185c4b7c4fd535bf06f30a4/antigravity-0.1.zip", hash = "sha256:5edae882b40ca0c91e689c5015c3c97b92e14c8a9101add598404b0e9e86cdb3", size = 942, upload-time = "2007-12-06T11:03:18Z" }
+
+[[package]]
 name = "cluster-comparison"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "antigravity" },
     { name = "mat73" },
     { name = "matplotlib" },
     { name = "numpy" },
@@ -26,6 +33,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "antigravity", specifier = ">=0.1" },
     { name = "mat73", specifier = ">=0.65" },
     { name = "matplotlib", specifier = ">=3.10.8" },
     { name = "numpy", specifier = ">=2.4.3" },
