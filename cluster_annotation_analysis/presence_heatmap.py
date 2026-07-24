@@ -20,15 +20,22 @@ and let the two agree (or not):
      early->late diagonal band fall out of the matrix on its own. Two figures:
      one sorted phase-then-behavior, one behavior-then-phase.
 
-  2. Validation dendrogram = Ward linkage over those same temporal profiles, with
-     no annotation in the distance. Leaf-aligned strips recolour the tree by
-     phase and behavior; if the hand phases track the presence structure, the
-     phase strip comes out in contiguous blocks. A cut into as many groups as
-     there are phases is scored against the phase labels (adjusted Rand) as a
-     one-number readout.
+  2. Validation dendrogram = a tree over the clusters with no annotation in the
+     distance, leaf-aligned strips recolouring it by phase and behavior. The
+     distance is either the pipeline's OWN similarity matrix (average linkage on
+     data/<mouse>_sim_distance.csv, precomputed by build_sim_distance.py from
+     Clusters/sim -- the model's internal geometry) when that cache is present,
+     or a Ward linkage over the weekly presence profiles otherwise. A cut into as
+     many groups as there are phases is scored against the phase labels (adjusted
+     Rand) as a one-number readout. Note the two distances answer different
+     questions: the presence tree asks whether the hand phases track WHEN clusters
+     occur, the sim tree whether they track HOW the model groups the clusters.
 
 Run:  uv run python cluster_annotation_analysis/presence_heatmap.py            # mouse 1mp
       uv run python cluster_annotation_analysis/presence_heatmap.py --mouse 1mp
+
+To build the sim distance the dendrogram prefers (one-time, reads Clusters/sim):
+      uv run python cluster_annotation_analysis/build_sim_distance.py --mouse 1mp
 """
 from __future__ import annotations
 
@@ -44,6 +51,7 @@ import pandas as pd
 from matplotlib.colors import ListedColormap
 from matplotlib.patches import Patch
 from scipy.cluster.hierarchy import dendrogram, fcluster, linkage
+from scipy.spatial.distance import squareform
 from sklearn.metrics import adjusted_rand_score
 
 HERE = Path(__file__).resolve().parent
@@ -54,7 +62,7 @@ from utils import save_figure                    # noqa: E402
 # Annotation vocab, kept in the order we want to read it on the page. `early`
 # -> `sustained` is a rough temporal progression; `uncategorized` (annotated but
 # no phase call) and `unannotated` (never touched) trail after, greyed out.
-PHASE_ORDER = ["early", "mid", "late", "sustained", "uncategorized", "unannotated"]
+PHASE_ORDER = ["early", "mid", "sustained", "late", "uncategorized", "unannotated"]
 BEHAVIOR_ORDER = ["descent", "ascent", "rearing", "grooming", "immobile",
                   "locomotion", "miscellaneous", "unannotated"]
 
@@ -222,22 +230,53 @@ def _leaf_strip(ax, values, leaves, colors, order, label):
     ax.set_ylabel(label, rotation=0, ha="right", va="center", fontsize=8)
 
 
-def plot_dendrogram(presence, meta, path):
-    """Ward tree over the temporal presence profiles, recoloured by annotation.
+def build_linkage(presence, dist):
+    """(Z, subtitle) for the dendrogram.
 
-    The annotation is NOT in the distance -- only the cluster x week profiles are
-    -- so the phase/behavior strips underneath are an independent check on the
-    labelling. Reports the adjusted-Rand agreement between a phase-count cut of
-    the tree and the phase labels (unannotated clusters excluded from the score).
+    With `dist` (a labelled cluster x cluster distance from the similarity
+    matrix), use average linkage over that precomputed distance -- the tree is
+    then the model's own geometry. Without it, fall back to Ward over the weekly
+    presence profiles. Either way the annotation is never in the distance.
+    """
+    if dist is not None:
+        d = dist.reindex(index=presence.index, columns=presence.index)
+        if d.isna().any().any():
+            missing = presence.index[d.isna().any(axis=1)].tolist()
+            raise ValueError(f"sim distance is missing clusters {missing}; "
+                             "rebuild it with build_sim_distance.py")
+        Z = linkage(squareform(d.to_numpy(), checks=False), method="average")
+        return Z, "average linkage on session sim distance"
+    Z = linkage(presence.to_numpy(), method="ward")
+    return Z, "Ward linkage on weekly presence"
+
+
+def plot_dendrogram(presence, meta, path, dist=None):
+    """Tree over the clusters, recoloured by annotation.
+
+    Distance is either the pipeline's own similarity (``dist``, average linkage)
+    or the weekly presence profiles (Ward) -- see ``build_linkage``. The
+    annotation is NOT in either distance, so the phase/behavior strips underneath
+    are an independent check on the labelling. Reports the adjusted-Rand
+    agreement between a phase-count cut of the tree and the phase labels
+    (unannotated clusters excluded from the score).
     """
     ids = presence.index.to_numpy()
-    X = presence.to_numpy()
-    Z = linkage(X, method="ward")
+    Z, dist_label = build_linkage(presence, dist)
     leaves = dendrogram(Z, no_plot=True)["leaves"]
     n = len(ids)
 
     phase_vals = meta["phase"].to_numpy()
     beh_vals = meta["behavior"].to_numpy()
+
+    # phase palette for this figure only: the real temporal phases spread along
+    # matplotlib's `summer` (green -> yellow). `sustained` is placed BETWEEN
+    # `mid` and `late` on the ramp -- it spans them in time, so it should read as
+    # a colour between them rather than past `late`. Non-phases kept grey.
+    color_seq = ["late", "sustained", "mid", "early"]      # order along `summer`
+    summer = plt.cm.summer(np.linspace(0, 1, len(color_seq)))
+    phase_cmap = {p: tuple(c) for p, c in zip(color_seq, summer)}
+    phase_cmap["uncategorized"] = PHASE_COLORS["uncategorized"]
+    phase_cmap[UNANNOTATED] = PHASE_COLORS[UNANNOTATED]
 
     # quantitative check: cut into (#real phases) groups, score vs phase labels
     real = np.array([p != UNANNOTATED for p in phase_vals])
@@ -254,13 +293,13 @@ def plot_dendrogram(presence, meta, path):
 
     dendrogram(Z, ax=ax_d, no_labels=True, above_threshold_color="#999999",
                color_threshold=0)
-    ax_d.set_ylabel("Ward distance")
-    ax_d.set_title(f"cluster temporal-presence dendrogram, coloured by annotation "
+    ax_d.set_ylabel("linkage distance")
+    ax_d.set_title(f"cluster dendrogram ({dist_label}), coloured by annotation "
                    f"(phase vs {n_phase}-group cut: adj. Rand = {ari:.2f})",
                    fontsize=11)
     ax_d.tick_params(labelbottom=False)
 
-    _leaf_strip(ax_ph, phase_vals, leaves, PHASE_COLORS, PHASE_ORDER, "phase")
+    _leaf_strip(ax_ph, phase_vals, leaves, phase_cmap, PHASE_ORDER, "phase")
     _leaf_strip(ax_be, beh_vals, leaves, BEHAVIOR_COLORS, BEHAVIOR_ORDER, "behavior")
 
     # cluster-id labels under the bottom strip, coloured by phase
@@ -268,16 +307,20 @@ def plot_dendrogram(presence, meta, path):
     ax_be.set_xticklabels([str(ids[l]) for l in leaves], rotation=90, fontsize=4)
     for tick, l in zip(ax_be.get_xticklabels(), leaves):
         ph = phase_vals[l]
-        tick.set_color(PHASE_COLORS[ph] if ph != UNANNOTATED else "#999999")
+        tick.set_color(phase_cmap.get(ph, "#999999"))
     ax_be.tick_params(labelbottom=True)
     ax_be.set_xlabel("cluster id (leaf order)")
 
-    phase_handles = [Patch(facecolor=PHASE_COLORS[p], label=p)
+    phase_handles = [Patch(facecolor=phase_cmap[p], label=p)
                      for p in PHASE_ORDER if (phase_vals == p).any()]
     beh_handles = [Patch(facecolor=BEHAVIOR_COLORS[b], label=b)
                    for b in BEHAVIOR_ORDER if (beh_vals == b).any()]
-    ax_d.legend(handles=phase_handles + beh_handles, ncol=2, fontsize=7,
-                title="annotation", title_fontsize=8, loc="upper right")
+    # two separate legends: phase (top-left) and behavior (top-right)
+    leg_phase = ax_d.legend(handles=phase_handles, title="phase", fontsize=7,
+                            title_fontsize=8, loc="upper left")
+    ax_d.add_artist(leg_phase)
+    ax_d.legend(handles=beh_handles, title="behavior", fontsize=7,
+                title_fontsize=8, loc="upper right")
 
     save_figure(fig, path, dpi=150, bbox_inches="tight")
     plt.close(fig)
@@ -302,6 +345,20 @@ def main():
     print(f"{args.mouse}: {len(presence)} clusters x {presence.shape[1]} weeks "
           f"({len(annot)} annotated, {n_un} unannotated)")
 
+    # optional: cluster distance from the pipeline's similarity matrix, if it has
+    # been precomputed (build_sim_distance.py). Present -> average linkage on it;
+    # absent -> plot_dendrogram falls back to Ward on the presence profiles.
+    dist_path = HERE / "data" / f"{args.mouse}_sim_distance.csv"
+    dist = None
+    if dist_path.is_file():
+        dist = pd.read_csv(dist_path, index_col=0)
+        dist.index = dist.index.astype(int)
+        dist.columns = dist.columns.astype(int)
+        print(f"  using sim distance {dist_path.name} ({dist.shape[0]} clusters)")
+    else:
+        print(f"  no {dist_path.name}; dendrogram falls back to Ward on presence "
+              f"(run build_sim_distance.py --mouse {args.mouse} to use the sim)")
+
     plot_heatmap(presence, meta, ["phase", "behavior"],
                  f"{args.mouse}: cluster presence, sorted by phase then behavior",
                  out / f"{args.mouse}_presence_by_phase.jpeg")
@@ -309,7 +366,7 @@ def main():
                  f"{args.mouse}: cluster presence, sorted by behavior then phase",
                  out / f"{args.mouse}_presence_by_behavior.jpeg")
     ari = plot_dendrogram(presence, meta,
-                          out / f"{args.mouse}_presence_dendrogram.jpeg")
+                          out / f"{args.mouse}_presence_dendrogram.jpeg", dist=dist)
 
     print(f"  phase vs presence-tree cut: adjusted Rand = {ari:.3f}")
     print(f"  wrote heatmaps + dendrogram to {out}")
